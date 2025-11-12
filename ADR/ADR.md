@@ -131,12 +131,64 @@
 **Архивирование:**
 
 - Через **2 дня** после создания заказ автоматически перемещается в **cold storage**
-- Старые данные доступны через отдельный API
-- Retention в cold storage: 1 год
+- Старые данные доступны через обычный API, но на их получение не действует SLA ответа как на обычном запросе
+- Retention в cold storage: 3 года (или иное, если треубется законодательством)
+
+## Архитектурное решение
+
+(какие мы виды баз где используем, для гетов нужен Redis чтобы не загружать основную базу. базы нужно шардировать)
 
 ## Схема системы
 
-![](assets/scheme.png)
+```mermaid
+
+flowchart LR
+subgraph Клиент
+A[приложение]
+end
+
+subgraph Gateway
+ALB[балансировщик]
+end
+
+subgraph Сервисы
+direction TB
+CLIENT[client]
+WORKERS[background workers]
+end
+
+subgraph Внешние сервисы
+SCOOTERS[scooters]
+PAYMENTS[payments]
+ZONE[zone]
+USERS[users]
+CONFIGS[configs]
+end
+
+subgraph Хранилища
+ORDERS_DB[База заказов основной и реплики ACID-запись]
+COLD[cold storage]
+OFFER_CACHE[Redis кэш офферов]
+ORDER_CACHE[Redis кэш заказов]
+end
+
+A --> ALB
+ALB --> CLIENT
+CLIENT --> OFFER_CACHE
+CLIENT --> ORDER_CACHE
+CLIENT --> ORDERS_DB
+CLIENT -->|critical| SCOOTERS
+CLIENT -->|critical| PAYMENTS
+CLIENT --> ZONE
+CLIENT --> USERS
+CLIENT --> CONFIGS
+
+WORKERS --> ORDERS_DB
+WORKERS --> COLD
+
+ORDERS_DB --> COLD
+
+```
 
 ## Основные сущности
 
