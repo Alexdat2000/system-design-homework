@@ -88,7 +88,51 @@
 
 ## Расчёт нагрузки (Scalability)
 
-(TODO: считаем сколько новой информации генерируется за условно день и говорим что нужно через день после заказа класть информацию в какой-то cold storage)
+**Запись (Write):**
+
+- Orders creation: 1,000 RPS
+- Offers creation: 1,000 RPS
+- Payment transactions: 2,000 RPS (hold + clear по 2 на заказ)
+- Scooter status updates: 2,000 RPS (обновляется дважды при старте и завершении)
+- **Итого запись: ~6,000 RPS**
+
+**Чтение (Read):**
+
+- Order reads: 1,000 RPS × 100 GET (параметр Y) = **100,000 RPS** - предположим что все необходимые валидации входят в 100 get rps на заказ
+- **Итого чтение: ~100,000 RPS**
+
+### Объем генерируемых данных:
+
+**За сутки:**
+
+```
+Заказов: 1,000 RPS × 86,400 сек = 86,400,000 (86.4M заказов/день)
+Объем: 86.4M × 100 КБ = 8,640 ГБ = 8.64 ТБ/день
+```
+
+**За год (без архивирования):**
+
+```
+Заказов: 86.4M × 365 = 31.5 миллиардов
+Объем: 8.64 ТБ × 365 = ~3.15 ПБ
+```
+
+**Вывод:** Хранить все данные в активной БД невозможно и неэффективно.
+
+### Стратегия управления данными:
+
+**Hot Storage (активная БД, 2 дня):**
+
+- Заказов: 86.4M × 2 = 172.8M
+- Данные заказов: ~17 ТБ
+- Другие таблицы(users, scooters, zones): <1 ТБ - скорее всего и того меньше
+- **Активная БД: ~18 ТБ**
+
+**Архивирование:**
+
+- Через **2 дня** после создания заказ автоматически перемещается в **cold storage**
+- Старые данные доступны через отдельный API
+- Retention в cold storage: 1 год
 
 ## Схема системы
 
@@ -96,8 +140,96 @@
 
 ## Основные сущности
 
-(TODO: здесь схемы баз данных)
+### ER-диаграмма базы данных:
 
+```mermaid
+erDiagram
+    USERS ||--o{ ORDERS : "creates"
+    USERS ||--o{ OFFERS : "receives"
+    USERS ||--o{ PAYMENT_TRANSACTIONS : "makes"
+
+    TARIFF_ZONES ||--o{ SCOOTERS : "contains"
+    TARIFF_ZONES ||--o{ OFFERS : "defines_price"
+
+    SCOOTERS ||--o{ OFFERS : "offered_in"
+    SCOOTERS ||--o{ ORDERS : "used_in"
+
+    OFFERS ||--o| ORDERS : "converts_to"
+
+    ORDERS ||--o{ PAYMENT_TRANSACTIONS : "has"
+
+    USERS {
+        varchar id PK
+        boolean has_subscription
+        boolean trusted
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    TARIFF_ZONES {
+        varchar id PK
+        varchar name
+        int price_per_minute
+        int price_unlock
+        int default_deposit
+        boolean is_active
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    SCOOTERS {
+        varchar id PK
+        varchar zone_id FK
+        int charge
+        enum status
+        decimal latitude
+        decimal longitude
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    OFFERS {
+        varchar id PK
+        varchar user_id FK
+        varchar scooter_id FK
+        varchar zone_id FK
+        int price_per_minute
+        int price_unlock
+        int deposit
+        enum status
+        timestamp expires_at
+        timestamp created_at
+    }
+
+    ORDERS {
+        varchar id PK
+        varchar user_id FK
+        varchar scooter_id FK
+        varchar offer_id FK
+        int price_per_minute
+        int price_unlock
+        int deposit
+        int total_amount
+        enum status
+        timestamp start_time
+        timestamp finish_time
+        int duration_seconds
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    PAYMENT_TRANSACTIONS {
+        varchar id PK
+        varchar order_id FK
+        varchar user_id FK
+        enum transaction_type
+        int amount
+        enum status
+        varchar external_transaction_id
+        text error_message
+        timestamp created_at
+    }
+```
 
 ## Maintainability
 
