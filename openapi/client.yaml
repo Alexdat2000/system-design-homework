@@ -1,0 +1,201 @@
+openapi: 3.0.3
+info:
+  title: Scooter API
+  version: "1.0.0"
+  description: API клиентского сервиса
+
+tags:
+  - name: client
+    description: Клиент сервиса аренды самокатов
+    
+paths:
+  /offers:
+    post:
+      tags: [client]
+      summary: Создать оффер на самокат для пользователя
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - user_id
+                - scooter_id
+              properties:
+                user_id:
+                  type: string
+                  example: "user-123"
+                scooter_id:
+                  type: string
+                  example: "scooter-456"
+      responses:
+        '201':
+          description: Оффер создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Offer'
+        '400':
+          description: Некорректные параметры или невозможно создать оффер
+        '503':
+          description: Внешний сервис недоступен
+
+  /orders:
+    post:
+      tags: [client]
+      summary: Создать заказ на основе оффера
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - offer_id
+                - user_id
+              properties:
+                offer_id:
+                  type: string
+                  example: "offer-789"
+                user_id:
+                  type: string
+                  example: "user-123"
+      responses:
+        '201':
+          description: Заказ создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          description: Оффер невалиден или неактивен
+        '500':
+          description: Внутренняя ошибка
+
+  /orders/{order_id}:
+    get:
+      tags: [client]
+      summary: Получить информацию о заказе
+      parameters:
+        - in: path
+          name: order_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Информация по заказу
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '404':
+          description: Заказ не найден
+
+  /orders/{order_id}/finish:
+    post:
+      tags: [client]
+      summary: Завершить заказ
+      parameters:
+        - in: path
+          name: order_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Заказ завершён
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '409':
+          description: Заказ уже завершён
+        '400':
+          description: Ошибка завершения
+        '503':
+          description: Сервис недоступен
+
+components:
+  schemas:
+    Offer:
+      type: object
+      required: [id, user_id, scooter_id, zone_id, expires_at, price_per_minute, price_unlock, deposit]
+      properties:
+        id:
+          type: string
+          example: "offer-789"
+        user_id:
+          type: string
+          example: "user-123"
+        scooter_id:
+          type: string
+          example: "scooter-456"
+        zone_id:
+          type: string
+          example: "zone-1"
+        expires_at:
+          type: string
+          format: date-time
+          example: "2024-06-14T12:34:56Z"
+        created_at:
+          type: string
+          format: date-time
+          example: "2024-06-14T12:30:00Z"
+        price_per_minute:
+          type: integer
+          example: 10
+        price_unlock:
+          type: integer
+          example: 20
+        deposit:
+          type: integer
+          example: 100
+
+    Order:
+      type: object
+      required: [id, user_id, scooter_id, offer_id, status, start_time]
+      properties:
+        id:
+          type: string
+          example: "order-abc"
+        user_id:
+          type: string
+          example: "user-123"
+        scooter_id:
+          type: string
+          example: "scooter-456"
+        offer_id:
+          type: string
+          example: "offer-789"
+        status:
+          type: string
+          enum: [ACTIVE, FINISHED, CANCELLED, PAYMENT_FAILED]
+          example: "ACTIVE"
+        start_time:
+          type: string
+          format: date-time
+          example: "2024-06-14T12:35:00Z"
+        finish_time:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2024-06-14T12:55:00Z"
+        current_amount:
+          type: integer
+          nullable: true
+          example: 200
+        price_per_minute:
+          type: integer
+          example: 10
+        price_unlock:
+          type: integer
+          example: 20
+        deposit:
+          type: integer
+          example: 100
+        duration_seconds:
+          type: integer
+          nullable: true
+          example: 1200
