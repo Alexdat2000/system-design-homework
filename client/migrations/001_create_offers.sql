@@ -1,0 +1,2 @@
+-- TODO: Create offers table
+
