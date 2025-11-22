@@ -11,14 +11,14 @@ import (
 
 // mockOrderRepository is a mock implementation of Repository
 type mockOrderRepository struct {
-	createOrderFunc       func(ctx context.Context, order *api.Order) error
+	createOrderFunc       func(ctx context.Context, order *api.Order, transactionID string) error
 	getOrderByIDFunc      func(ctx context.Context, orderID string) (*api.Order, error)
 	getOrderByOfferIDFunc func(ctx context.Context, offerID string) (*api.Order, error)
 }
 
-func (m *mockOrderRepository) CreateOrder(ctx context.Context, order *api.Order) error {
+func (m *mockOrderRepository) CreateOrder(ctx context.Context, order *api.Order, transactionID string) error {
 	if m.createOrderFunc != nil {
-		return m.createOrderFunc(ctx, order)
+		return m.createOrderFunc(ctx, order, transactionID)
 	}
 	return nil
 }
@@ -107,7 +107,7 @@ func TestService_CreateOrder_Success(t *testing.T) {
 		getOrderByOfferIDFunc: func(ctx context.Context, offerID string) (*api.Order, error) {
 			return nil, nil // No existing order
 		},
-		createOrderFunc: func(ctx context.Context, order *api.Order) error {
+		createOrderFunc: func(ctx context.Context, order *api.Order, transactionID string) error {
 			if order.OfferId != "offer-123" {
 				t.Errorf("Unexpected offer ID: %s", order.OfferId)
 			}
@@ -116,6 +116,9 @@ func TestService_CreateOrder_Success(t *testing.T) {
 			}
 			if order.Status != api.ACTIVE {
 				t.Errorf("Expected status ACTIVE, got %s", order.Status)
+			}
+			if transactionID == "" {
+				t.Error("Expected transaction ID to be set")
 			}
 			return nil
 		},
@@ -478,7 +481,7 @@ func TestService_CreateOrder_DatabaseError(t *testing.T) {
 		getOrderByOfferIDFunc: func(ctx context.Context, offerID string) (*api.Order, error) {
 			return nil, nil
 		},
-		createOrderFunc: func(ctx context.Context, order *api.Order) error {
+		createOrderFunc: func(ctx context.Context, order *api.Order, transactionID string) error {
 			return errors.New("database error")
 		},
 	}

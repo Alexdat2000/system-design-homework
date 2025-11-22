@@ -2,11 +2,13 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
-	"os"
 	"time"
 
 	"client/api"
+	"client/internal/config"
 	"client/internal/domain/orders"
 	"client/internal/external"
 	"client/internal/handler"
@@ -80,10 +82,21 @@ func newInt(i int) *int {
 }
 
 func main() {
-	// Initialize dependencies (stubs for now)
-	orderRepo := postgres.NewOrderRepository()
+	// Load configuration
+	cfg := config.LoadConfig()
+
+	// Initialize PostgreSQL connection
+	db, err := postgres.NewDB(cfg.DatabaseURL)
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer db.Close()
+	log.Println("Connected to PostgreSQL database")
+
+	// Initialize repositories
+	orderRepo := postgres.NewOrderRepository(db)
 	offerRepo := redis.NewOfferRepository()
-	paymentsClient := external.NewClient("http://localhost:8081") // Stub URL
+	paymentsClient := external.NewClient(cfg.ExternalServiceURL)
 
 	// Initialize services
 	ordersService := orders.NewService(orderRepo, offerRepo, paymentsClient)
@@ -97,17 +110,10 @@ func main() {
 	}
 
 	router := chi.NewRouter()
-	port := getEnv("PORT", "8080")
-	addr := ":" + port
+	addr := fmt.Sprintf(":%s", cfg.Port)
 
-	println("Client service starting on", addr)
-	http.ListenAndServe(addr, api.HandlerFromMux(server, router))
-}
-
-func getEnv(key, defaultValue string) string {
-	value := os.Getenv(key)
-	if value == "" {
-		return defaultValue
+	log.Printf("Client service starting on %s", addr)
+	if err := http.ListenAndServe(addr, api.HandlerFromMux(server, router)); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
 	}
-	return value
 }
