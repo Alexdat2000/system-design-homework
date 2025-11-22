@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"time"
 
 	"client/api" // замените на актуальный path если ваш модуль называется иначе
@@ -87,5 +88,18 @@ func newInt(i int) *int {
 func main() {
 	router := chi.NewRouter()
 	server := &Server{}
-	http.ListenAndServe(":8080", api.HandlerFromMux(server, router))
+
+	port := getEnv("PORT", "8080")
+	addr := ":" + port
+
+	println("Client service starting on", addr)
+	http.ListenAndServe(addr, api.HandlerFromMux(server, router))
+}
+
+func getEnv(key, defaultValue string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	return value
 }
