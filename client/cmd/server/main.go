@@ -6,12 +6,19 @@ import (
 	"os"
 	"time"
 
-	"client/api" // замените на актуальный path если ваш модуль называется иначе
+	"client/api"
+	"client/internal/domain/orders"
+	"client/internal/external"
+	"client/internal/handler"
+	"client/internal/storage/postgres"
+	"client/internal/storage/redis"
 
 	"github.com/go-chi/chi/v5"
 )
 
-type Server struct{}
+type Server struct {
+	ordersHandler *handler.OrdersHandler
+}
 
 func (s *Server) PostOffers(w http.ResponseWriter, r *http.Request) {
 	// Заглушка: возвращаем dummy offer
@@ -30,20 +37,7 @@ func (s *Server) PostOffers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) PostOrders(w http.ResponseWriter, r *http.Request) {
-	// Заглушка: возвращаем dummy order
-	now := time.Now()
-	resp := api.Order{
-		Id:             "order-id-777",
-		OfferId:        "offer-id-111",
-		UserId:         "user-abc",
-		ScooterId:      "scooter-xyz",
-		StartTime:      now,
-		Status:         api.ACTIVE,
-		PricePerMinute: newInt(5),
-		PriceUnlock:    newInt(10),
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	s.ordersHandler.PostOrders(w, r)
 }
 
 func (s *Server) GetOrdersOrderId(w http.ResponseWriter, r *http.Request, orderId string) {
@@ -86,9 +80,23 @@ func newInt(i int) *int {
 }
 
 func main() {
-	router := chi.NewRouter()
-	server := &Server{}
+	// Initialize dependencies (stubs for now)
+	orderRepo := postgres.NewOrderRepository()
+	offerRepo := redis.NewOfferRepository()
+	paymentsClient := external.NewClient("http://localhost:8081") // Stub URL
 
+	// Initialize services
+	ordersService := orders.NewService(orderRepo, offerRepo, paymentsClient)
+
+	// Initialize handlers
+	ordersHandler := handler.NewOrdersHandler(ordersService)
+
+	// Create server with handlers
+	server := &Server{
+		ordersHandler: ordersHandler,
+	}
+
+	router := chi.NewRouter()
 	port := getEnv("PORT", "8080")
 	addr := ":" + port
 
