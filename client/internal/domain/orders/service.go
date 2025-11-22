@@ -132,10 +132,9 @@ func (s *Service) CreateOrder(ctx context.Context, req *CreateOrderRequest) (*ap
 		CurrentAmount:  &offer.PriceUnlock, // Initial amount includes unlock price
 	}
 
-	// Step 9: Save order to database
+	// Step 9: Save order to database with payment transaction
 	// According to ADR, this should be in a transaction with payment transaction record
-	// For now, we just save the order (stub)
-	if err := s.orderRepo.CreateOrder(ctx, order); err != nil {
+	if err := s.orderRepo.CreateOrder(ctx, order, holdResp.TransactionID); err != nil {
 		// If order creation fails, we should unhold the deposit
 		// In production, this should be handled in a transaction
 		_ = s.paymentsClient.UnholdMoneyForOrder(ctx, orderID)
