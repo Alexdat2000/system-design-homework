@@ -5,12 +5,12 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-scooter_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-scooter_password}
-      POSTGRES_DB: ${POSTGRES_DB:-scooter_db}
+      POSTGRES_DB: ${POSTGRES_DB:-client-database}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init-db:/docker-entrypoint-initdb.d
+      - ./client/migrations:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-scooter_user}"]
       interval: 10s
@@ -25,7 +25,7 @@ services:
       dockerfile: Dockerfile
     container_name: scooter-client
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-scooter_user}:${POSTGRES_PASSWORD:-scooter_password}@postgres:5432/${POSTGRES_DB:-scooter_db}?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-scooter_user}:${POSTGRES_PASSWORD:-scooter_password}@postgres:5432/${POSTGRES_DB:-client-database}?sslmode=disable
       PORT: 8080
       EXTERNAL_SERVICE_URL: http://external-service:8081
     ports:
@@ -43,7 +43,7 @@ services:
       dockerfile: Dockerfile
     container_name: scooter-external
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-scooter_user}:${POSTGRES_PASSWORD:-scooter_password}@postgres:5432/${POSTGRES_DB:-scooter_db}?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-scooter_user}:${POSTGRES_PASSWORD:-scooter_password}@postgres:5432/${POSTGRES_DB:-client-database}?sslmode=disable
       PORT: 8081
     ports:
       - "8081:8081"
