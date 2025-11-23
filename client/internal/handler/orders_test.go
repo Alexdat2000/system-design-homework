@@ -16,11 +16,24 @@ import (
 // mockOrdersService is a mock implementation of orders.ServiceInterface
 type mockOrdersService struct {
 	createOrderFunc func(ctx context.Context, req *orders.CreateOrderRequest) (*api.Order, error)
+	getOrderFunc    func(ctx context.Context, orderID string) (*api.Order, error)
 }
 
 func (m *mockOrdersService) CreateOrder(ctx context.Context, req *orders.CreateOrderRequest) (*api.Order, error) {
 	if m.createOrderFunc != nil {
 		return m.createOrderFunc(ctx, req)
+	}
+	return nil, nil
+}
+
+func (m *mockOrdersService) FinishOrder(ctx context.Context, orderID string) (*api.Order, error) {
+	// Not used in existing tests; stub to satisfy interface
+	return nil, nil
+}
+
+func (m *mockOrdersService) GetOrder(ctx context.Context, orderID string) (*api.Order, error) {
+	if m.getOrderFunc != nil {
+		return m.getOrderFunc(ctx, orderID)
 	}
 	return nil, nil
 }
@@ -43,8 +56,8 @@ func TestOrdersHandler_PostOrders_Success(t *testing.T) {
 
 	mockService := &mockOrdersService{
 		createOrderFunc: func(ctx context.Context, req *orders.CreateOrderRequest) (*api.Order, error) {
-			if req.OfferID != "offer-456" || req.UserID != "user-789" {
-				t.Errorf("Unexpected request: offer_id=%s, user_id=%s", req.OfferID, req.UserID)
+			if req.OrderID != "order-789" || req.OfferID != "offer-456" || req.UserID != "user-789" {
+				t.Errorf("Unexpected request: order_id=%s, offer_id=%s, user_id=%s", req.OrderID, req.OfferID, req.UserID)
 			}
 			return expectedOrder, nil
 		},
@@ -53,11 +66,7 @@ func TestOrdersHandler_PostOrders_Success(t *testing.T) {
 	handler := NewOrdersHandler(mockService)
 
 	// Create request
-	reqBody := api.PostOrdersJSONRequestBody{
-		OfferId: "offer-456",
-		UserId:  "user-789",
-	}
-	body, _ := json.Marshal(reqBody)
+	body := makeBody("order-789", "offer-456", "user-789")
 	req := httptest.NewRequest(http.MethodPost, "/orders", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -109,10 +118,7 @@ func TestOrdersHandler_PostOrders_MissingOfferId(t *testing.T) {
 	handler := NewOrdersHandler(mockService)
 
 	// Create request without offer_id
-	reqBody := api.PostOrdersJSONRequestBody{
-		UserId: "user-789",
-	}
-	body, _ := json.Marshal(reqBody)
+	body := makeBody("order-1", "", "user-789")
 	req := httptest.NewRequest(http.MethodPost, "/orders", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -131,10 +137,7 @@ func TestOrdersHandler_PostOrders_MissingUserId(t *testing.T) {
 	handler := NewOrdersHandler(mockService)
 
 	// Create request without user_id
-	reqBody := api.PostOrdersJSONRequestBody{
-		OfferId: "offer-456",
-	}
-	body, _ := json.Marshal(reqBody)
+	body := makeBody("order-1", "offer-456", "")
 	req := httptest.NewRequest(http.MethodPost, "/orders", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -156,11 +159,7 @@ func TestOrdersHandler_PostOrders_OfferNotFound(t *testing.T) {
 	}
 	handler := NewOrdersHandler(mockService)
 
-	reqBody := api.PostOrdersJSONRequestBody{
-		OfferId: "offer-456",
-		UserId:  "user-789",
-	}
-	body, _ := json.Marshal(reqBody)
+	body := makeBody("order-404", "offer-456", "user-789")
 	req := httptest.NewRequest(http.MethodPost, "/orders", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -182,11 +181,7 @@ func TestOrdersHandler_PostOrders_OfferExpired(t *testing.T) {
 	}
 	handler := NewOrdersHandler(mockService)
 
-	reqBody := api.PostOrdersJSONRequestBody{
-		OfferId: "offer-456",
-		UserId:  "user-789",
-	}
-	body, _ := json.Marshal(reqBody)
+	body := makeBody("order-expired", "offer-456", "user-789")
 	req := httptest.NewRequest(http.MethodPost, "/orders", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -208,11 +203,7 @@ func TestOrdersHandler_PostOrders_OfferAlreadyUsed(t *testing.T) {
 	}
 	handler := NewOrdersHandler(mockService)
 
-	reqBody := api.PostOrdersJSONRequestBody{
-		OfferId: "offer-456",
-		UserId:  "user-789",
-	}
-	body, _ := json.Marshal(reqBody)
+	body := makeBody("order-used", "offer-456", "user-789")
 	req := httptest.NewRequest(http.MethodPost, "/orders", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -234,11 +225,7 @@ func TestOrdersHandler_PostOrders_InvalidUser(t *testing.T) {
 	}
 	handler := NewOrdersHandler(mockService)
 
-	reqBody := api.PostOrdersJSONRequestBody{
-		OfferId: "offer-456",
-		UserId:  "user-789",
-	}
-	body, _ := json.Marshal(reqBody)
+	body := makeBody("order-invalid", "offer-456", "user-789")
 	req := httptest.NewRequest(http.MethodPost, "/orders", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -260,11 +247,7 @@ func TestOrdersHandler_PostOrders_InternalError(t *testing.T) {
 	}
 	handler := NewOrdersHandler(mockService)
 
-	reqBody := api.PostOrdersJSONRequestBody{
-		OfferId: "offer-456",
-		UserId:  "user-789",
-	}
-	body, _ := json.Marshal(reqBody)
+	body := makeBody("order-err", "offer-456", "user-789")
 	req := httptest.NewRequest(http.MethodPost, "/orders", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -279,6 +262,20 @@ func TestOrdersHandler_PostOrders_InternalError(t *testing.T) {
 }
 
 // Helper function for tests
-func intPtr(i int) *int {
-	return &i
+func intPtr(i int) *int { return &i }
+
+// makeBody builds request body with optional fields (order_id, offer_id, user_id)
+func makeBody(orderID, offerID, userID string) []byte {
+	m := map[string]string{}
+	if orderID != "" {
+		m["order_id"] = orderID
+	}
+	if offerID != "" {
+		m["offer_id"] = offerID
+	}
+	if userID != "" {
+		m["user_id"] = userID
+	}
+	b, _ := json.Marshal(m)
+	return b
 }

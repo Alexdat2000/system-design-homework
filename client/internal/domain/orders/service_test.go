@@ -29,6 +29,11 @@ func (m *mockOrderRepository) GetOrderByID(ctx context.Context, orderID string) 
 	}
 	return nil, nil
 }
+ 
+// Satisfy updated Repository interface (FinishOrder used by finish flow; not exercised in current tests)
+func (m *mockOrderRepository) FinishOrder(ctx context.Context, orderID string, finishTime time.Time, durationSeconds int, totalAmount int, finalStatus api.OrderStatus, chargeSuccess bool, unholdSuccess bool, chargeTxID string) error {
+	return nil
+}
 
 func (m *mockOrderRepository) GetOrderByOfferID(ctx context.Context, offerID string) (*api.Order, error) {
 	if m.getOrderByOfferIDFunc != nil {
@@ -55,6 +60,19 @@ func (m *mockOfferRepository) MarkOfferAsUsed(ctx context.Context, offerID strin
 		return m.markOfferAsUsedFunc(ctx, offerID)
 	}
 	return true, nil
+}
+
+// Below are no-op stubs to satisfy the expanded offers.Repository interface
+func (m *mockOfferRepository) GetOfferByUserScooter(ctx context.Context, userID, scooterID string) (*api.Offer, error) {
+	return nil, nil
+}
+
+func (m *mockOfferRepository) SaveOffer(ctx context.Context, offer *api.Offer) error {
+	return nil
+}
+
+func (m *mockOfferRepository) SetOfferByUserScooter(ctx context.Context, userID, scooterID, offerID string) error {
+	return nil
 }
 
 // mockPaymentsClient is a mock implementation of external.PaymentsClientInterface
@@ -104,6 +122,9 @@ func TestService_CreateOrder_Success(t *testing.T) {
 	}
 
 	orderRepo := &mockOrderRepository{
+		getOrderByIDFunc: func(ctx context.Context, orderID string) (*api.Order, error) {
+			return nil, nil
+		},
 		getOrderByOfferIDFunc: func(ctx context.Context, offerID string) (*api.Order, error) {
 			return nil, nil // No existing order
 		},
@@ -155,6 +176,7 @@ func TestService_CreateOrder_Success(t *testing.T) {
 
 	// Execute
 	req := &CreateOrderRequest{
+		OrderID: "order-new-123",
 		OfferID: "offer-123",
 		UserID:  "user-456",
 	}
@@ -200,8 +222,11 @@ func TestService_CreateOrder_Idempotency(t *testing.T) {
 	}
 
 	orderRepo := &mockOrderRepository{
-		getOrderByOfferIDFunc: func(ctx context.Context, offerID string) (*api.Order, error) {
-			return existingOrder, nil // Order already exists
+		getOrderByIDFunc: func(ctx context.Context, orderID string) (*api.Order, error) {
+			if orderID == "order-existing" {
+				return existingOrder, nil
+			}
+			return nil, nil
 		},
 	}
 
@@ -212,6 +237,7 @@ func TestService_CreateOrder_Idempotency(t *testing.T) {
 
 	// Execute
 	req := &CreateOrderRequest{
+		OrderID: "order-existing",
 		OfferID: "offer-123",
 		UserID:  "user-456",
 	}
@@ -247,6 +273,7 @@ func TestService_CreateOrder_OfferNotFound(t *testing.T) {
 	service := NewService(orderRepo, offerRepo, paymentsClient)
 
 	req := &CreateOrderRequest{
+		OrderID: "order-not-found",
 		OfferID: "offer-123",
 		UserID:  "user-456",
 	}
@@ -284,6 +311,7 @@ func TestService_CreateOrder_OfferExpired(t *testing.T) {
 	service := NewService(orderRepo, offerRepo, paymentsClient)
 
 	req := &CreateOrderRequest{
+		OrderID: "order-expired",
 		OfferID: "offer-123",
 		UserID:  "user-456",
 	}
@@ -321,6 +349,7 @@ func TestService_CreateOrder_InvalidUser(t *testing.T) {
 	service := NewService(orderRepo, offerRepo, paymentsClient)
 
 	req := &CreateOrderRequest{
+		OrderID: "order-invalid-user",
 		OfferID: "offer-123",
 		UserID:  "user-999", // Different user
 	}
@@ -361,6 +390,7 @@ func TestService_CreateOrder_OfferAlreadyUsed(t *testing.T) {
 	service := NewService(orderRepo, offerRepo, paymentsClient)
 
 	req := &CreateOrderRequest{
+		OrderID: "order-already-used",
 		OfferID: "offer-123",
 		UserID:  "user-456",
 	}
@@ -409,6 +439,7 @@ func TestService_CreateOrder_PaymentHoldFailed(t *testing.T) {
 	service := NewService(orderRepo, offerRepo, paymentsClient)
 
 	req := &CreateOrderRequest{
+		OrderID: "order-hold-failed",
 		OfferID: "offer-123",
 		UserID:  "user-456",
 	}
@@ -455,6 +486,7 @@ func TestService_CreateOrder_PaymentHoldError(t *testing.T) {
 	service := NewService(orderRepo, offerRepo, paymentsClient)
 
 	req := &CreateOrderRequest{
+		OrderID: "order-hold-error",
 		OfferID: "offer-123",
 		UserID:  "user-456",
 	}
@@ -512,6 +544,7 @@ func TestService_CreateOrder_DatabaseError(t *testing.T) {
 	service := NewService(orderRepo, offerRepo, paymentsClient)
 
 	req := &CreateOrderRequest{
+		OrderID: "order-db-error",
 		OfferID: "offer-123",
 		UserID:  "user-456",
 	}

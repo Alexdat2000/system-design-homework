@@ -52,9 +52,13 @@ paths:
             schema:
               type: object
               required:
+                - order_id
                 - offer_id
                 - user_id
               properties:
+                order_id:
+                  type: string
+                  example: "order-abc"
                 offer_id:
                   type: string
                   example: "offer-789"

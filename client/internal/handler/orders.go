@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"client/api"
 	"client/internal/domain/orders"
 	"encoding/json"
 	"net/http"
@@ -22,14 +21,23 @@ func NewOrdersHandler(ordersService orders.ServiceInterface) *OrdersHandler {
 // PostOrders handles POST /orders request
 // Creates an order from an offer
 func (h *OrdersHandler) PostOrders(w http.ResponseWriter, r *http.Request) {
-	// Parse request body
-	var reqBody api.PostOrdersJSONRequestBody
+	// Parse request body (ADR: expect client-provided order_id for idempotency)
+	type postOrdersRequest struct {
+		OrderId string `json:"order_id"`
+		OfferId string `json:"offer_id"`
+		UserId  string `json:"user_id"`
+	}
+	var reqBody postOrdersRequest
 	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
 	// Validate required fields
+	if reqBody.OrderId == "" {
+		http.Error(w, "order_id is required", http.StatusBadRequest)
+		return
+	}
 	if reqBody.OfferId == "" {
 		http.Error(w, "offer_id is required", http.StatusBadRequest)
 		return
@@ -41,6 +49,7 @@ func (h *OrdersHandler) PostOrders(w http.ResponseWriter, r *http.Request) {
 
 	// Create order request
 	req := &orders.CreateOrderRequest{
+		OrderID: reqBody.OrderId,
 		OfferID: reqBody.OfferId,
 		UserID:  reqBody.UserId,
 	}
@@ -72,6 +81,69 @@ func (h *OrdersHandler) PostOrders(w http.ResponseWriter, r *http.Request) {
 	// Return created order
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
+	if err := json.NewEncoder(w).Encode(order); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
+}
+
+
+// Added GET /orders/{order_id} delegating to service cache-first lookup
+func (h *OrdersHandler) GetOrdersOrderId(w http.ResponseWriter, r *http.Request, orderId string) {
+	// Validate input
+	if orderId == "" {
+		http.Error(w, "order_id is required", http.StatusBadRequest)
+		return
+	}
+
+	// Call service
+	order, err := h.ordersService.GetOrder(r.Context(), orderId)
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if order == nil {
+		http.Error(w, "Order not found", http.StatusNotFound)
+		return
+	}
+
+	// Return order
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(order); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
+}
+
+// PostOrdersOrderIdFinish handles POST /orders/{order_id}/finish
+// Finalizes an order. Idempotent: if already finished, returns 409.
+func (h *OrdersHandler) PostOrdersOrderIdFinish(w http.ResponseWriter, r *http.Request, orderId string) {
+	// Validate input
+	if orderId == "" {
+		http.Error(w, "order_id is required", http.StatusBadRequest)
+		return
+	}
+
+	// Call service
+	order, err := h.ordersService.FinishOrder(r.Context(), orderId)
+	if err != nil {
+		switch err {
+		case orders.ErrNoSuchOrder:
+			// Spec for finish defines 400/409/503; используем 400 для "не найден/нельзя завершить"
+			http.Error(w, "Order not found", http.StatusBadRequest)
+			return
+		case orders.ErrOrderNotActive:
+			http.Error(w, "Order already finished", http.StatusConflict)
+			return
+		default:
+			// 400 как общий бизнес-ошибочный кейс (например, платёжная ошибка)
+			http.Error(w, "Finish error", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Return updated order
+	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(order); err != nil {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return

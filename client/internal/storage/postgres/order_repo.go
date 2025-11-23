@@ -149,7 +149,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, orderID string) (*ap
 // GetOrderByOfferID retrieves an order by offer ID (for idempotency check)
 func (r *OrderRepository) GetOrderByOfferID(ctx context.Context, offerID string) (*api.Order, error) {
 	query := `
-		SELECT 
+		SELECT
 			id, user_id, scooter_id, offer_id,
 			price_per_minute, price_unlock, deposit, total_amount,
 			status, start_time, finish_time, duration_seconds
@@ -190,6 +190,76 @@ func (r *OrderRepository) GetOrderByOfferID(ctx context.Context, offerID string)
 	order.DurationSeconds = durationSeconds
 
 	return &order, nil
+}
+
+// FinishOrder finalizes order and appends payment transactions (CLEAR, REFUND)
+func (r *OrderRepository) FinishOrder(ctx context.Context, orderID string, finishTime time.Time, durationSeconds int, totalAmount int, finalStatus api.OrderStatus, chargeSuccess bool, unholdSuccess bool, chargeTxID string) error {
+	tx, err := r.db.Pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	now := time.Now()
+
+	// Update order fields
+	updateOrder := `
+		UPDATE orders
+		SET finish_time = $1,
+			duration_seconds = $2,
+			total_amount = $3,
+			status = $4,
+			updated_at = $5
+		WHERE id = $6
+	`
+	if _, err := tx.Exec(ctx, updateOrder, finishTime, durationSeconds, totalAmount, string(finalStatus), now, orderID); err != nil {
+		return fmt.Errorf("failed to update order on finish: %w", err)
+	}
+
+	// Fetch user_id and deposit for transactions
+	var userID string
+	var deposit int
+	row := tx.QueryRow(ctx, `SELECT user_id, deposit FROM orders WHERE id = $1`, orderID)
+	if err := row.Scan(&userID, &deposit); err != nil {
+		return fmt.Errorf("failed to fetch order for transactions: %w", err)
+	}
+
+	// Insert CLEAR transaction
+	clearStatus := "FAILED"
+	if chargeSuccess {
+		clearStatus = "SUCCESS"
+	}
+	clearID := fmt.Sprintf("txn-clear-%s", orderID)
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO payment_transactions (
+			id, order_id, user_id, transaction_type, amount, status, external_transaction_id, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+	`,
+		clearID, orderID, userID, "CLEAR", totalAmount, clearStatus, chargeTxID, now,
+	); err != nil {
+		return fmt.Errorf("failed to insert CLEAR transaction: %w", err)
+	}
+
+	// Insert REFUND (unhold) transaction (amount equals deposit for audit)
+	refundStatus := "FAILED"
+	if unholdSuccess {
+		refundStatus = "SUCCESS"
+	}
+	refundID := fmt.Sprintf("txn-refund-%s", orderID)
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO payment_transactions (
+			id, order_id, user_id, transaction_type, amount, status, external_transaction_id, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+	`,
+		refundID, orderID, userID, "REFUND", deposit, refundStatus, "", now,
+	); err != nil {
+		return fmt.Errorf("failed to insert REFUND transaction: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("failed to commit finish transaction: %w", err)
+	}
+	return nil
 }
 
 // Helper function to get int value from pointer

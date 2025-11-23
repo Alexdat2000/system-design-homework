@@ -7,7 +7,7 @@ client/
 │   │   ├── offers/
 │   │   │   ├── model.go          # Offer struct
 │   │   │   ├── repository.go     # OfferRepository interface
-│   │   │   └── service.go        # Бизнес-логика создания офферов
+│   │   │   └── service.go        # Бизнес-логика создания офферов; in-memory кэши: zones (TTL 10m), configs (∞ TTL)
 │   │   ├── orders/
 │   │   │   ├── model.go          # Order struct
 │   │   │   ├── repository.go     # OrderRepository interface
@@ -22,7 +22,7 @@ client/
 │   │   └── redis/
 │   │       ├── redis.go          # Подключение к Redis
 │   │       ├── offer_repo.go     # Реализация OfferRepository (офферы - основное хранилище)
-│   │       └── cache.go          # Кэш для заказов и зон
+│   │       └── cache.go          # Кэш для заказов (зоны кэшируются в памяти сервиса)
 │   │
 │   ├── external/
 │   │   ├── client.go             # HTTP клиент к external API
@@ -31,14 +31,13 @@ client/
 │   ├── handler/
 │   │   ├── handler.go            # Базовые HTTP handlers
 │   │   ├── offers.go             # Handlers для офферов
-│   │   └── orders.go             # Handlers для заказов
+│   │   └── orders.go             # Handlers для заказов (POST /orders ожидает client-provided order_id)
 │   │
 │   └── config/
 │       └── config.go
 │
 ├── migrations/
-│   └── 001_create_orders.sql    # Создание таблиц orders и payment_transactions
+│   └── 001_create_orders_and_paynents.sql    # Создание таблиц orders и payment_transactions
 ├── api/
 │   └── api.gen.go
 └── go.mod
-
