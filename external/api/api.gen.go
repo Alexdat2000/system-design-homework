@@ -4,16 +4,9 @@
 package api
 
 import (
-	"bytes"
-	"compress/gzip"
-	"encoding/base64"
 	"fmt"
 	"net/http"
-	"net/url"
-	"path"
-	"strings"
 
-	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/go-chi/chi/v5"
 	"github.com/oapi-codegen/runtime"
 )
@@ -66,6 +59,12 @@ type GetTariffZoneDataParams struct {
 	Id string `form:"id" json:"id"`
 }
 
+// PostUnholdMoneyForOrderJSONBody defines parameters for PostUnholdMoneyForOrder.
+type PostUnholdMoneyForOrderJSONBody struct {
+	OrderId *string `json:"order_id,omitempty"`
+	UserId  *string `json:"user_id,omitempty"`
+}
+
 // GetUserProfileParams defines parameters for GetUserProfile.
 type GetUserProfileParams struct {
 	// Id Идентификатор пользователя
@@ -77,6 +76,9 @@ type PostClearMoneyForOrderJSONRequestBody PostClearMoneyForOrderJSONBody
 
 // PostHoldMoneyForOrderJSONRequestBody defines body for PostHoldMoneyForOrder for application/json ContentType.
 type PostHoldMoneyForOrderJSONRequestBody PostHoldMoneyForOrderJSONBody
+
+// PostUnholdMoneyForOrderJSONRequestBody defines body for PostUnholdMoneyForOrder for application/json ContentType.
+type PostUnholdMoneyForOrderJSONRequestBody PostUnholdMoneyForOrderJSONBody
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -95,6 +97,9 @@ type ServerInterface interface {
 	// Получить данные по тарифной зоне (депозит, стоимость разблокировки и минуты)
 	// (GET /tariff-zone-data)
 	GetTariffZoneData(w http.ResponseWriter, r *http.Request, params GetTariffZoneDataParams)
+	// Разморозить депозит на карте клиента
+	// (POST /unhold-money-for-order)
+	PostUnholdMoneyForOrder(w http.ResponseWriter, r *http.Request)
 	// Получить параметры пользователя (наличие подписки, обязательность депозита)
 	// (GET /user-profile)
 	GetUserProfile(w http.ResponseWriter, r *http.Request, params GetUserProfileParams)
@@ -131,6 +136,12 @@ func (_ Unimplemented) GetScooterData(w http.ResponseWriter, r *http.Request, pa
 // Получить данные по тарифной зоне (депозит, стоимость разблокировки и минуты)
 // (GET /tariff-zone-data)
 func (_ Unimplemented) GetTariffZoneData(w http.ResponseWriter, r *http.Request, params GetTariffZoneDataParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Разморозить депозит на карте клиента
+// (POST /unhold-money-for-order)
+func (_ Unimplemented) PostUnholdMoneyForOrder(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -250,6 +261,20 @@ func (siw *ServerInterfaceWrapper) GetTariffZoneData(w http.ResponseWriter, r *h
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetTariffZoneData(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PostUnholdMoneyForOrder operation middleware
+func (siw *ServerInterfaceWrapper) PostUnholdMoneyForOrder(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostUnholdMoneyForOrder(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -422,105 +447,11 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/tariff-zone-data", wrapper.GetTariffZoneData)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/unhold-money-for-order", wrapper.PostUnholdMoneyForOrder)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/user-profile", wrapper.GetUserProfile)
 	})
 
 	return r
-}
-
-// Base64 encoded, gzipped, json marshaled Swagger object
-var swaggerSpec = []string{
-
-	"H4sIAAAAAAAC/+xWT2/jRBT/KtbAYZGcJsCecluWfz0gKgEXUBVN7UnqJfF4x2NEWEVKUmCRGqmXSnCi",
-	"Kp/A241VN2mcr/DmG6E3dhI3tmm2e9kDt2Rm3vN7v9/v/XlBLN7zuMtc6ZPmC+Jbx6xH9c9vLM4lE59S",
-	"SfGvJ7jHhHSYvrSOqegw/CX7HiNN4riSdZggA5M4du7cl8JxO3j8C3dZq/RuYBLBngeOYDZp/oD2m9fm",
-	"6lOH5sqMHz1jlkSX31LhtNvfc5cVI7RZmwZd2bKZx31HvlGonnAs1vKYaPUcN5AVeaavArfLrR/LXpSl",
-	"VfC85cYsxF2W93c+EweCt51uSeLH1G/5wZFvCedIOtzNhXbEeZdR9z8ylyLwJbPLbMrSKXxr46EYN3pw",
-	"3DZP2UEbL42PPDnYN+AKFhCpP2ABsfrNUCOI1BCuIFYjSOAKPTsS8yWf/SyZcGnXeHKwT0zyExN+6ubD",
-	"vQbmwD3mUs8hTfLxXmOvgRBTeayxqVtdRkWtx13Wr7W5qHFhM6Ex5L7WCCJJMax9mzTJAfflUzT5Ci0+",
-	"5+Jr/T5FgvnyE273dTlwVzJXO6Ce13Us7aL+zE/hT6uqSBXt8cCtkKaOrFVBU+BX3Q1KYd8QJ0XA9IHv",
-	"cddPw/io0ShyAucQwUJN4DXEhjpRI1hm9CSG/oPEhLBQp/qjftDrUdFHw8vVpRqriQHTnB+4htCAJSQQ",
-	"wTVMYaZOkFja8VFSHu33dCM6RI91i7ttp6Mj7LAScr5g8mn2pDyhnVmhtu3gFe0e5PhBqErR3ALqEuao",
-	"UAjVUE0MNTJgBgks1K8Qw2sI4RbibYguIIG5OlEvIU5BylvEiG+sRmoMEdyqU+MRTCGGRepKvYRIjWAG",
-	"MURbdh/ksFyBl0J5zLv2m6n+S961/xd9XvSoXXiluZ5BrIYp52UF8KdmKtFPrlcMYxksVwcGsonsoWbG",
-	"KZFzZBQWagxhdU346VCu2dlUriqM/PDG/idoj0km0GUh57+yEh1DrJWEUY0xfENX+K1OOMzictDkecBE",
-	"n5jEpT1NoE220TZz9G+TdfiW1fq+YG3SJO/VN6tLPdtb6vm8y2r1HBlDzhDzZdrKcimqExTa48bjEmlc",
-	"5h8igZFmEW5S+O4t8el9nzYeocTUUJ3B1IDYcGzUHNb3ab6yMwmsFCH1DlTDfeleVWz2pbcVxhgD1ccL",
-	"SOBmHei7r5DczribQMpThahaKf/kLEJ1trIIi6KB8AGyqQpIz4lckzENPUMSiHU3Gml/agghXBf62AyH",
-	"c2zggIGFOlHju5pDdWV6wy5c8zbLZ5XW8jvqw4Wms5mric7xSh9HMFdn777O8vmXCe0CkdfZzpHmqjwr",
-	"RXZRajB5QGNaaj1hK4rUWA3VaWU0xiPteK63kDgTJEyzfW8GsWlAAq/UmW5kWUSo0kx8d/UJYV5iqCvd",
-	"0wbrs0LOf+txPIRQ/Q6x3pMKI0pvW2s9rHvlwNzFGSSwhHkqPrjZuFkP4d3c5CtUnWJE6xZwNzxdVjuG",
-	"VkHJXYcpiCUez3daIDeOVuvj4HDwbwAAAP//LhDcaiMQAAA=",
-}
-
-// GetSwagger returns the content of the embedded swagger specification file
-// or error if failed to decode
-func decodeSpec() ([]byte, error) {
-	zipped, err := base64.StdEncoding.DecodeString(strings.Join(swaggerSpec, ""))
-	if err != nil {
-		return nil, fmt.Errorf("error base64 decoding spec: %w", err)
-	}
-	zr, err := gzip.NewReader(bytes.NewReader(zipped))
-	if err != nil {
-		return nil, fmt.Errorf("error decompressing spec: %w", err)
-	}
-	var buf bytes.Buffer
-	_, err = buf.ReadFrom(zr)
-	if err != nil {
-		return nil, fmt.Errorf("error decompressing spec: %w", err)
-	}
-
-	return buf.Bytes(), nil
-}
-
-var rawSpec = decodeSpecCached()
-
-// a naive cached of a decoded swagger spec
-func decodeSpecCached() func() ([]byte, error) {
-	data, err := decodeSpec()
-	return func() ([]byte, error) {
-		return data, err
-	}
-}
-
-// Constructs a synthetic filesystem for resolving external references when loading openapi specifications.
-func PathToRawSpec(pathToFile string) map[string]func() ([]byte, error) {
-	res := make(map[string]func() ([]byte, error))
-	if len(pathToFile) > 0 {
-		res[pathToFile] = rawSpec
-	}
-
-	return res
-}
-
-// GetSwagger returns the Swagger specification corresponding to the generated code
-// in this file. The external references of Swagger specification are resolved.
-// The logic of resolving external references is tightly connected to "import-mapping" feature.
-// Externally referenced files must be embedded in the corresponding golang packages.
-// Urls can be supported but this task was out of the scope.
-func GetSwagger() (swagger *openapi3.T, err error) {
-	resolvePath := PathToRawSpec("")
-
-	loader := openapi3.NewLoader()
-	loader.IsExternalRefsAllowed = true
-	loader.ReadFromURIFunc = func(loader *openapi3.Loader, url *url.URL) ([]byte, error) {
-		pathToFile := url.String()
-		pathToFile = path.Clean(pathToFile)
-		getSpec, ok := resolvePath[pathToFile]
-		if !ok {
-			err1 := fmt.Errorf("path not found: %s", pathToFile)
-			return nil, err1
-		}
-		return getSpec()
-	}
-	var specData []byte
-	specData, err = rawSpec()
-	if err != nil {
-		return
-	}
-	swagger, err = loader.LoadFromData(specData)
-	if err != nil {
-		return
-	}
-	return
 }

@@ -80,6 +80,24 @@ paths:
         200:
           description: Деньги успешно списаны
 
+  /unhold-money-for-order:
+    post:
+      tags: [payments]
+      summary: Разморозить депозит на карте клиента
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                user_id:
+                  type: string
+                order_id:
+                  type: string
+      responses:
+        200:
+          description: Деньги успешно разморожены
 
   /tariff-zone-data:
     get:

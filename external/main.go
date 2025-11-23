@@ -99,10 +99,7 @@ func (s *Server) PostClearMoneyForOrder(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) PostUnholdMoneyForOrder(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		UserID  string `json:"user_id"`
-		OrderID string `json:"order_id"`
-	}
+	var req api.PostUnholdMoneyForOrderJSONRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
@@ -125,10 +122,6 @@ func main() {
 	}
 
 	router := chi.NewRouter()
-
-	// Register unhold endpoint manually (not in generated API yet)
-	router.Post("/unhold-money-for-order", server.PostUnholdMoneyForOrder)
-
 	port := getEnv("PORT", "8081")
 	addr := ":" + port
 
