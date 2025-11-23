@@ -13,28 +13,6 @@ type PaymentHoldResponse struct {
 	Success       bool   `json:"ok"`
 }
 
-// ScooterData is returned by external scooters API
-type ScooterData struct {
-	ID     string `json:"id"`
-	ZoneID string `json:"zone_id"`
-	Charge int    `json:"charge"`
-}
-
-// TariffZone is returned by external zone API
-type TariffZone struct {
-	ID              string `json:"id"`
-	PricePerMinute  int    `json:"price_per_minute"`
-	PriceUnlock     int    `json:"price_unlock"`
-	DefaultDeposit  int    `json:"default_deposit"`
-}
-
-// UserProfile is returned by external users API
-type UserProfile struct {
-	ID               string `json:"id"`
-	HasSubscription  bool   `json:"has_subscribtion"`
-	Trusted          bool   `json:"trusted"`
-}
-
 // DynamicConfigs carries dynamic configuration values
 type DynamicConfigs struct {
 	// Multiplicative surge factor, e.g., 1.2

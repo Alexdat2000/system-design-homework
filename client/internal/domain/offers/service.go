@@ -91,7 +91,7 @@ func (s *Service) CreateOffer(ctx context.Context, req *CreateOfferRequest) (*ap
 	}
 
 	// 2) Zone with cache/fallback (non-critical with 10m cache)
-	zone, err := s.getZoneWithCache(ctx, scooter.ZoneID)
+	zone, err := s.getZoneWithCache(ctx, scooter.ZoneId)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func (s *Service) CreateOffer(ctx context.Context, req *CreateOfferRequest) (*ap
 	// 3) Users (non-critical): fallback to "no privileges" on error
 	var hasSub, trusted bool
 	if profile, err := s.ext.GetUserProfile(ctx, req.UserID); err == nil && profile != nil {
-		hasSub = profile.HasSubscription
+		hasSub = profile.HasSubscribtion
 		trusted = profile.Trusted
 	}
 
@@ -125,7 +125,7 @@ func (s *Service) CreateOffer(ctx context.Context, req *CreateOfferRequest) (*ap
 		Id:             uuid.New().String(),
 		UserId:         req.UserID,
 		ScooterId:      req.ScooterID,
-		ZoneId:         scooter.ZoneID,
+		ZoneId:         scooter.ZoneId,
 		PricePerMinute: out.PricePerMinute,
 		PriceUnlock:    out.PriceUnlock,
 		Deposit:        out.Deposit,

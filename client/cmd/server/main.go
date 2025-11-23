@@ -38,7 +38,6 @@ func (s *Server) PostOrdersOrderIdFinish(w http.ResponseWriter, r *http.Request,
 	s.ordersHandler.PostOrdersOrderIdFinish(w, r, orderId)
 }
 
-
 func main() {
 	// Load configuration
 	cfg := config.LoadConfig()
@@ -68,7 +67,10 @@ func main() {
 	offerRepo := redis.NewOfferRepository(redisClient)
 
 	// Initialize external clients
-	extClient := external.NewClient(cfg.ExternalServiceURL)
+	extClient, err := external.NewExternalClient(cfg.ExternalServiceURL)
+	if err != nil {
+		log.Fatalf("Failed to create external client: %v", err)
+	}
 
 	// Initialize services
 	orderCache := redis.NewOrderCache(redisClient)

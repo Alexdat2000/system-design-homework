@@ -1,12 +1,10 @@
 package external
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 	"time"
 )
 
@@ -17,130 +15,190 @@ type PaymentsClientInterface interface {
 	ChargeMoneyForOrder(ctx context.Context, orderID string, amount int) error
 }
 
-// Client handles communication with external services
-type Client struct {
-	baseURL    string
-	httpClient *http.Client
+// ExternalClient handles communication with external services
+// Uses generated API client from openapi/external.yaml
+type ExternalClient struct {
+	apiClient *ClientWithResponses
 }
 
-// Ensure Client implements PaymentsClientInterface
-var _ PaymentsClientInterface = (*Client)(nil)
+// Ensure ExternalClient implements PaymentsClientInterface
+var _ PaymentsClientInterface = (*ExternalClient)(nil)
 
-// NewClient creates a new external API client
-func NewClient(baseURL string) *Client {
-	return &Client{
-		baseURL: baseURL,
-		httpClient: &http.Client{
-			Timeout: 5 * time.Second,
-		},
+// NewExternalClient creates a new external API client
+func NewExternalClient(baseURL string) (*ExternalClient, error) {
+	httpClient := &http.Client{
+		Timeout: 5 * time.Second,
 	}
+
+	apiClient, err := NewClientWithResponses(baseURL, WithHTTPClient(httpClient))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create API client: %w", err)
+	}
+
+	return &ExternalClient{apiClient: apiClient}, nil
 }
 
 // HoldMoneyForOrder holds (freezes) money on user's card for an order
-// This is a stub implementation that always succeeds
-func (c *Client) HoldMoneyForOrder(ctx context.Context, req *PaymentHoldRequest) (*PaymentHoldResponse, error) {
-	// Stub: always return success
-	// In real implementation, this would make HTTP POST to payments service
+func (c *ExternalClient) HoldMoneyForOrder(ctx context.Context, req *PaymentHoldRequest) (*PaymentHoldResponse, error) {
+	requestBody := PostHoldMoneyForOrderJSONRequestBody{
+		UserId:  &req.UserID,
+		OrderId: &req.OrderID,
+		Amount:  &req.Amount,
+	}
+
+	resp, err := c.apiClient.PostHoldMoneyForOrderWithResponse(ctx, requestBody)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode() != http.StatusOK {
+		return nil, fmt.Errorf("hold-money-for-order unexpected status: %d", resp.StatusCode())
+	}
+
+	// Parse response body for transaction_id
+	var responseBody struct {
+		TransactionID string `json:"transaction_id"`
+		Ok            bool   `json:"ok"`
+	}
+	if err := json.Unmarshal(resp.Body, &responseBody); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
 	return &PaymentHoldResponse{
-		TransactionID: fmt.Sprintf("txn-hold-%s", req.OrderID),
-		Success:       true,
+		TransactionID: responseBody.TransactionID,
+		Success:       responseBody.Ok,
 	}, nil
 }
 
 // ChargeMoneyForOrder charges money from user's card for an order
-func (c *Client) ChargeMoneyForOrder(ctx context.Context, orderID string, amount int) error {
-	// Stub: always return success
-	// In real implementation, this would make HTTP POST to payments service
+// Note: user_id is not available in the signature, but external API requires it
+// For MVP, we'll pass empty user_id (external service will accept it)
+func (c *ExternalClient) ChargeMoneyForOrder(ctx context.Context, orderID string, amount int) error {
+	emptyUserID := ""
+	requestBody := PostClearMoneyForOrderJSONRequestBody{
+		OrderId: &orderID,
+		Amount:  &amount,
+		UserId:  &emptyUserID,
+	}
+
+	resp, err := c.apiClient.PostClearMoneyForOrderWithResponse(ctx, requestBody)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode() != http.StatusOK {
+		return fmt.Errorf("clear-money-for-order unexpected status: %d", resp.StatusCode())
+	}
+
 	return nil
 }
 
 // UnholdMoneyForOrder releases (unfreezes) money on user's card
-func (c *Client) UnholdMoneyForOrder(ctx context.Context, orderID string) error {
-	// Stub: always return success
-	// In real implementation, this would make HTTP POST to payments service
+// Note: user_id is not available in the signature, but external API requires it
+// For MVP, we'll pass empty user_id (external service will accept it)
+func (c *ExternalClient) UnholdMoneyForOrder(ctx context.Context, orderID string) error {
+	emptyUserID := ""
+	requestBody := PostUnholdMoneyForOrderJSONRequestBody{
+		OrderId: &orderID,
+		UserId:  &emptyUserID,
+	}
+
+	resp, err := c.apiClient.PostUnholdMoneyForOrderWithResponse(ctx, requestBody)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode() != http.StatusOK {
+		return fmt.Errorf("unhold-money-for-order unexpected status: %d", resp.StatusCode())
+	}
+
 	return nil
 }
 
 // GetScooterData fetches scooter charge and zone id
-func (c *Client) GetScooterData(ctx context.Context, scooterID string) (*ScooterData, error) {
-	q := url.Values{}
-	q.Set("id", scooterID)
-	resp, err := c.makeRequest(ctx, http.MethodGet, "/scooter-data?"+q.Encode(), nil)
+func (c *ExternalClient) GetScooterData(ctx context.Context, scooterID string) (*ScooterData, error) {
+	params := GetScooterDataParams{Id: scooterID}
+	resp, err := c.apiClient.GetScooterDataWithResponse(ctx, &params)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusNotFound {
+
+	if resp.StatusCode() == http.StatusNotFound {
 		return nil, nil
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("scooter-data unexpected status: %d", resp.StatusCode)
+
+	if resp.StatusCode() != http.StatusOK {
+		return nil, fmt.Errorf("scooter-data unexpected status: %d", resp.StatusCode())
 	}
-	var data ScooterData
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, err
+
+	if resp.JSON200 == nil {
+		return nil, fmt.Errorf("scooter-data: empty response")
 	}
-	return &data, nil
+
+	return resp.JSON200, nil
 }
 
 // GetTariffZoneData fetches tariff zone parameters
-func (c *Client) GetTariffZoneData(ctx context.Context, zoneID string) (*TariffZone, error) {
-	q := url.Values{}
-	q.Set("id", zoneID)
-	resp, err := c.makeRequest(ctx, http.MethodGet, "/tariff-zone-data?"+q.Encode(), nil)
+func (c *ExternalClient) GetTariffZoneData(ctx context.Context, zoneID string) (*TariffZone, error) {
+	params := GetTariffZoneDataParams{Id: zoneID}
+	resp, err := c.apiClient.GetTariffZoneDataWithResponse(ctx, &params)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusNotFound {
+
+	if resp.StatusCode() == http.StatusNotFound {
 		return nil, nil
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("tariff-zone unexpected status: %d", resp.StatusCode)
+
+	if resp.StatusCode() != http.StatusOK {
+		return nil, fmt.Errorf("tariff-zone unexpected status: %d", resp.StatusCode())
 	}
-	var data TariffZone
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, err
+
+	if resp.JSON200 == nil {
+		return nil, fmt.Errorf("tariff-zone: empty response")
 	}
-	return &data, nil
+
+	return resp.JSON200, nil
 }
 
 // GetUserProfile fetches user subscription/trust flags
-func (c *Client) GetUserProfile(ctx context.Context, userID string) (*UserProfile, error) {
-	q := url.Values{}
-	q.Set("id", userID)
-	resp, err := c.makeRequest(ctx, http.MethodGet, "/user-profile?"+q.Encode(), nil)
+func (c *ExternalClient) GetUserProfile(ctx context.Context, userID string) (*UserProfile, error) {
+	params := GetUserProfileParams{Id: userID}
+	resp, err := c.apiClient.GetUserProfileWithResponse(ctx, &params)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusNotFound {
+
+	if resp.StatusCode() == http.StatusNotFound {
 		return nil, nil
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("user-profile unexpected status: %d", resp.StatusCode)
+
+	if resp.StatusCode() != http.StatusOK {
+		return nil, fmt.Errorf("user-profile unexpected status: %d", resp.StatusCode())
 	}
-	var data UserProfile
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, err
+
+	if resp.JSON200 == nil {
+		return nil, fmt.Errorf("user-profile: empty response")
 	}
-	return &data, nil
+
+	return resp.JSON200, nil
 }
 
 // GetConfigs fetches dynamic configuration
-func (c *Client) GetConfigs(ctx context.Context) (*DynamicConfigs, error) {
-	resp, err := c.makeRequest(ctx, http.MethodGet, "/configs", nil)
+func (c *ExternalClient) GetConfigs(ctx context.Context) (*DynamicConfigs, error) {
+	resp, err := c.apiClient.GetConfigsWithResponse(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("configs unexpected status: %d", resp.StatusCode)
+
+	if resp.StatusCode() != http.StatusOK {
+		return nil, fmt.Errorf("configs unexpected status: %d", resp.StatusCode())
 	}
-	var m map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&m); err != nil {
-		return nil, err
+
+	if resp.JSON200 == nil {
+		return nil, fmt.Errorf("configs: empty response")
 	}
+
 	// Map to struct with defaults per ADR (fallbacks)
 	cfg := &DynamicConfigs{
 		Surge:                          1.0,
@@ -148,6 +206,8 @@ func (c *Client) GetConfigs(ctx context.Context) (*DynamicConfigs, error) {
 		LowChargeThresholdPercent:      0,
 		IncompleteRideThresholdSeconds: 0,
 	}
+
+	m := *resp.JSON200
 	if v, ok := m["surge"].(float64); ok {
 		cfg.Surge = v
 	}
@@ -160,25 +220,6 @@ func (c *Client) GetConfigs(ctx context.Context) (*DynamicConfigs, error) {
 	if v, ok := m["incomplete_ride_threshold_seconds"].(float64); ok {
 		cfg.IncompleteRideThresholdSeconds = int(v)
 	}
+
 	return cfg, nil
-}
-
-// makeRequest is a helper for making HTTP requests (for future use)
-func (c *Client) makeRequest(ctx context.Context, method, path string, body interface{}) (*http.Response, error) {
-	var reqBody []byte
-	if body != nil {
-		var err error
-		reqBody, err = json.Marshal(body)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, bytes.NewBuffer(reqBody))
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	return c.httpClient.Do(req)
 }
