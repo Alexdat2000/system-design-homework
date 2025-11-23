@@ -88,6 +88,13 @@ func main() {
 	}
 
 	router := chi.NewRouter()
+
+	// Health check endpoint
+	router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+
 	addr := fmt.Sprintf(":%s", cfg.Port)
 
 	log.Printf("Client service starting on %s", addr)

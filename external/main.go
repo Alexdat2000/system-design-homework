@@ -122,6 +122,13 @@ func main() {
 	}
 
 	router := chi.NewRouter()
+
+	// Health check endpoint
+	router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+
 	port := getEnv("PORT", "8081")
 	addr := ":" + port
 

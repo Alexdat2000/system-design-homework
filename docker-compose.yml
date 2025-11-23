@@ -51,9 +51,16 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      external-service:
+        condition: service_healthy
     networks:
       - scooter-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   external-service:
     build:
@@ -61,16 +68,17 @@ services:
       dockerfile: Dockerfile
     container_name: scooter-external
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-scooter_user}:${POSTGRES_PASSWORD:-scooter_password}@postgres:5432/${POSTGRES_DB:-client-database}?sslmode=disable
       PORT: 8081
     ports:
       - "8081:8081"
-    depends_on:
-      postgres:
-        condition: service_healthy
     networks:
       - scooter-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   postgres_data:
