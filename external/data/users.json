@@ -1,0 +1,23 @@
+[
+  {
+    "id": "user-1",
+    "has_subscribtion": true,
+    "trusted": true
+  },
+  {
+    "id": "user-2",
+    "has_subscribtion": false,
+    "trusted": true
+  },
+  {
+    "id": "user-3",
+    "has_subscribtion": false,
+    "trusted": false
+  },
+  {
+    "id": "user-4",
+    "has_subscribtion": true,
+    "trusted": false
+  }
+]
+

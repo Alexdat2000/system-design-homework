@@ -1,0 +1,7 @@
+{
+  "surge": 1.2,
+  "low_charge_discount": 0.7,
+  "low_charge_threshold_percent": 28,
+  "incomplete_ride_threshold_seconds": 5
+}
+

@@ -1,0 +1,15 @@
+[
+  {
+    "id": "zone-1",
+    "price_per_minute": 7,
+    "price_unlock": 50,
+    "default_deposit": 200
+  },
+  {
+    "id": "zone-2",
+    "price_per_minute": 10,
+    "price_unlock": 75,
+    "default_deposit": 300
+  }
+]
+

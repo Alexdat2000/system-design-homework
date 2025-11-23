@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
 	"os"
 
@@ -10,69 +12,130 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-type Server struct{}
+type Server struct {
+	storage *Storage
+}
+
+func NewServer() (*Server, error) {
+	storage := NewStorage()
+	if err := storage.LoadFromJSONFiles(); err != nil {
+		return nil, fmt.Errorf("failed to load data: %w", err)
+	}
+	return &Server{storage: storage}, nil
+}
 
 func (s *Server) GetScooterData(w http.ResponseWriter, r *http.Request, params api.GetScooterDataParams) {
-	resp := api.ScooterData{
-		Id:     params.Id,
-		ZoneId: "zone-1",
-		Charge: 77,
+	scooter, ok := s.storage.GetScooter(params.Id)
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		return
 	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(scooter)
 }
 
 func (s *Server) GetTariffZoneData(w http.ResponseWriter, r *http.Request, params api.GetTariffZoneDataParams) {
-	resp := api.TariffZone{
-		Id:             params.Id,
-		PricePerMinute: 7,
-		PriceUnlock:    50,
-		DefaultDeposit: 200,
+	zone, ok := s.storage.GetZone(params.Id)
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		return
 	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(zone)
 }
 
 func (s *Server) GetUserProfile(w http.ResponseWriter, r *http.Request, params api.GetUserProfileParams) {
-	resp := api.UserProfile{
-		Id:              params.Id,
-		HasSubscribtion: true,
-		Trusted:         true,
+	user, ok := s.storage.GetUser(params.Id)
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		return
 	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
-}
-
-func (s *Server) PostHoldMoneyForOrder(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"ok":true}`))
-}
-
-func (s *Server) PostClearMoneyForOrder(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"ok":true}`))
+	json.NewEncoder(w).Encode(user)
 }
 
 func (s *Server) GetConfigs(w http.ResponseWriter, r *http.Request) {
-	resp := map[string]interface{}{
-		"surge":                             1.2,
-		"low_charge_discount":               0.7,
-		"low_charge_threshold_percent":      28,
-		"incomplete_ride_threshold_seconds": 5,
-	}
+	configs := s.storage.GetConfigs()
 	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(configs)
+}
+
+func (s *Server) PostHoldMoneyForOrder(w http.ResponseWriter, r *http.Request) {
+	var req api.PostHoldMoneyForOrderJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// MVP: always succeed, return transaction ID
+	resp := map[string]any{
+		"transaction_id": fmt.Sprintf("txn-hold-%s", *req.OrderId),
+		"ok":             true,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (s *Server) PostClearMoneyForOrder(w http.ResponseWriter, r *http.Request) {
+	var req api.PostClearMoneyForOrderJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// MVP: always succeed
+	resp := map[string]any{
+		"ok": true,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (s *Server) PostUnholdMoneyForOrder(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		UserID  string `json:"user_id"`
+		OrderID string `json:"order_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// MVP: always succeed
+	resp := map[string]any{
+		"ok": true,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(resp)
 }
 
 func main() {
+	server, err := NewServer()
+	if err != nil {
+		log.Fatalf("Failed to initialize server: %v", err)
+	}
+
 	router := chi.NewRouter()
-	server := &Server{}
+
+	// Register unhold endpoint manually (not in generated API yet)
+	router.Post("/unhold-money-for-order", server.PostUnholdMoneyForOrder)
 
 	port := getEnv("PORT", "8081")
 	addr := ":" + port
 
-	println("External service starting on", addr)
-	http.ListenAndServe(addr, api.HandlerFromMux(server, router))
+	log.Printf("External service starting on %s", addr)
+	if err := http.ListenAndServe(addr, api.HandlerFromMux(server, router)); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
 }
 
 func getEnv(key, defaultValue string) string {
