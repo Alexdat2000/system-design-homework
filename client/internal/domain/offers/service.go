@@ -99,7 +99,7 @@ func (s *Service) CreateOffer(ctx context.Context, req *CreateOfferRequest) (*ap
 	// 3) Users (non-critical): fallback to "no privileges" on error
 	var hasSub, trusted bool
 	if profile, err := s.ext.GetUserProfile(ctx, req.UserID); err == nil && profile != nil {
-		hasSub = profile.HasSubscribtion
+		hasSub = profile.HasSubscription
 		trusted = profile.Trusted
 	}
 

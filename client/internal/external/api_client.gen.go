@@ -33,7 +33,7 @@ type TariffZone struct {
 
 // UserProfile defines model for UserProfile.
 type UserProfile struct {
-	HasSubscribtion bool   `json:"has_subscribtion"`
+	HasSubscription bool   `json:"has_subscription"`
 	Id              string `json:"id"`
 	Trusted         bool   `json:"trusted"`
 }

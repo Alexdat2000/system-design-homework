@@ -192,13 +192,13 @@ components:
       properties:
         id:
           type: string
-        has_subscribtion:
+        has_subscription:
           type: boolean
         trusted:
           type: boolean
       required:
         - id
-        - has_subscribtion
+        - has_subscription
         - trusted
         
     Error:

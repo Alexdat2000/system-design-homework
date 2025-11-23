@@ -49,19 +49,19 @@ func (m *mockExternal) GetScooterData(ctx context.Context, scooterID string) (*e
 	if m.scooterFunc != nil {
 		return m.scooterFunc(ctx, scooterID)
 	}
-	return &external.ScooterData{ID: scooterID, ZoneID: "zone-1", Charge: 80}, nil
+	return &external.ScooterData{Id: scooterID, ZoneId: "zone-1", Charge: 80}, nil
 }
 func (m *mockExternal) GetTariffZoneData(ctx context.Context, zoneID string) (*external.TariffZone, error) {
 	if m.zoneFunc != nil {
 		return m.zoneFunc(ctx, zoneID)
 	}
-	return &external.TariffZone{ID: zoneID, PricePerMinute: 10, PriceUnlock: 20, DefaultDeposit: 100}, nil
+	return &external.TariffZone{Id: zoneID, PricePerMinute: 10, PriceUnlock: 20, DefaultDeposit: 100}, nil
 }
 func (m *mockExternal) GetUserProfile(ctx context.Context, userID string) (*external.UserProfile, error) {
 	if m.userFunc != nil {
 		return m.userFunc(ctx, userID)
 	}
-	return &external.UserProfile{ID: userID, HasSubscription: false, Trusted: false}, nil
+	return &external.UserProfile{Id: userID, HasSubscription: false, Trusted: false}, nil
 }
 func (m *mockExternal) GetConfigs(ctx context.Context) (*external.DynamicConfigs, error) {
 	if m.cfgFunc != nil {
@@ -136,13 +136,13 @@ func TestCreateOffer_ZoneFallbackFromCache(t *testing.T) {
 	}
 	ext := &mockExternal{
 		scooterFunc: func(ctx context.Context, scooterID string) (*external.ScooterData, error) {
-			return &external.ScooterData{ID: scooterID, ZoneID: "zone-777", Charge: 50}, nil
+			return &external.ScooterData{Id: scooterID, ZoneId: "zone-777", Charge: 50}, nil
 		},
 		zoneFunc: func(ctx context.Context, zoneID string) (*external.TariffZone, error) {
 			return nil, errors.New("zone unavailable")
 		},
 		userFunc: func(ctx context.Context, userID string) (*external.UserProfile, error) {
-			return &external.UserProfile{ID: userID, HasSubscription: false, Trusted: false}, nil
+			return &external.UserProfile{Id: userID, HasSubscription: false, Trusted: false}, nil
 		},
 		cfgFunc: func(ctx context.Context) (*external.DynamicConfigs, error) {
 			return &external.DynamicConfigs{Surge: 1.0, LowChargeDiscount: 1.0, LowChargeThresholdPercent: 0}, nil
@@ -152,7 +152,7 @@ func TestCreateOffer_ZoneFallbackFromCache(t *testing.T) {
 
 	// Прогреем кэш зон
 	svc.zoneCache["zone-777"] = zoneCacheEntry{
-		zone:      &external.TariffZone{ID: "zone-777", PricePerMinute: 9, PriceUnlock: 1, DefaultDeposit: 2},
+		zone:      &external.TariffZone{Id: "zone-777", PricePerMinute: 9, PriceUnlock: 1, DefaultDeposit: 2},
 		expiresAt: time.Now().Add(9 * time.Minute),
 	}
 
@@ -183,13 +183,13 @@ func TestCreateOffer_Pricing_SurgeAndLowCharge_Discounts_SubscriptionTrusted(t *
 	ext := &mockExternal{
 		scooterFunc: func(ctx context.Context, scooterID string) (*external.ScooterData, error) {
 			// Низкий заряд для применения скидки
-			return &external.ScooterData{ID: scooterID, ZoneID: "zone-A", Charge: 10}, nil
+			return &external.ScooterData{Id: scooterID, ZoneId: "zone-A", Charge: 10}, nil
 		},
 		zoneFunc: func(ctx context.Context, zoneID string) (*external.TariffZone, error) {
-			return &external.TariffZone{ID: zoneID, PricePerMinute: 10, PriceUnlock: 20, DefaultDeposit: 200}, nil
+			return &external.TariffZone{Id: zoneID, PricePerMinute: 10, PriceUnlock: 20, DefaultDeposit: 200}, nil
 		},
 		userFunc: func(ctx context.Context, userID string) (*external.UserProfile, error) {
-			return &external.UserProfile{ID: userID, HasSubscription: true, Trusted: true}, nil
+			return &external.UserProfile{Id: userID, HasSubscription: true, Trusted: true}, nil
 		},
 		cfgFunc: func(ctx context.Context) (*external.DynamicConfigs, error) {
 			return &external.DynamicConfigs{
