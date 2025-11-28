@@ -13,8 +13,8 @@ echo "📁 Project root: $PROJECT_ROOT"
 cd "$PROJECT_ROOT"
 
 # Check if docker-compose is available
-if ! command -v docker-compose &> /dev/null; then
-    echo "❌ docker-compose is not installed"
+if ! command -v docker compose &> /dev/null; then
+    echo "❌ docker compose is not installed"
     exit 1
 fi
 

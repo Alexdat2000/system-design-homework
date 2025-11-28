@@ -109,8 +109,8 @@ class ExternalServiceClient(ServiceClient):
 
 
 def run_docker_compose(command: list, check: bool = True) -> subprocess.CompletedProcess:
-    """Run docker-compose command."""
-    full_command = ["docker-compose", "-f", DOCKER_COMPOSE_FILE] + command
+    """Run docker compose command."""
+    full_command = ["docker", "compose", "-f", DOCKER_COMPOSE_FILE] + command
     return subprocess.run(
         full_command,
         cwd=PROJECT_ROOT,
