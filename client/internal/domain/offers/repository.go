@@ -5,7 +5,6 @@ import (
 	"context"
 )
 
-// Repository defines the interface for offer storage operations
 type Repository interface {
 	// GetOffer retrieves an offer by ID from Redis
 	// Returns (nil, nil) if not found
@@ -18,7 +17,6 @@ type Repository interface {
 	MarkOfferAsUsed(ctx context.Context, offerID string) (bool, error)
 
 	// GetOfferByUserScooter returns an existing valid offer for (user_id, scooter_id) if present.
-	// Implementation typically uses an index key that points to the actual offer id and validates TTL.
 	GetOfferByUserScooter(ctx context.Context, userID, scooterID string) (*api.Offer, error)
 
 	// SetOfferByUserScooter indexes offer id by (user_id, scooter_id) for fast idempotent lookup.

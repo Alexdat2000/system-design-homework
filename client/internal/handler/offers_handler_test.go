@@ -13,7 +13,6 @@ import (
 	"time"
 )
 
-// mockOffersService implements offers.ServiceInterface for handler tests
 type mockOffersService struct {
 	createOfferFunc func(ctx context.Context, req *offers.CreateOfferRequest) (*api.Offer, error)
 }

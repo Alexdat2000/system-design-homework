@@ -13,21 +13,16 @@ import (
 	"time"
 )
 
-// mockOrdersService is a mock implementation of orders.ServiceInterface
 type mockOrdersService struct {
 	createOrderFunc func(ctx context.Context, req *orders.CreateOrderRequest) (*api.Order, error)
 	getOrderFunc    func(ctx context.Context, orderID string) (*api.Order, error)
+	finishOrderFunc func(ctx context.Context, orderID string) (*api.Order, error)
 }
 
 func (m *mockOrdersService) CreateOrder(ctx context.Context, req *orders.CreateOrderRequest) (*api.Order, error) {
 	if m.createOrderFunc != nil {
 		return m.createOrderFunc(ctx, req)
 	}
-	return nil, nil
-}
-
-func (m *mockOrdersService) FinishOrder(ctx context.Context, orderID string) (*api.Order, error) {
-	// Not used in existing tests; stub to satisfy interface
 	return nil, nil
 }
 
@@ -38,8 +33,14 @@ func (m *mockOrdersService) GetOrder(ctx context.Context, orderID string) (*api.
 	return nil, nil
 }
 
+func (m *mockOrdersService) FinishOrder(ctx context.Context, orderID string) (*api.Order, error) {
+	if m.finishOrderFunc != nil {
+		return m.finishOrderFunc(ctx, orderID)
+	}
+	return nil, nil
+}
+
 func TestOrdersHandler_PostOrders_Success(t *testing.T) {
-	// Setup
 	now := time.Now()
 	expectedOrder := &api.Order{
 		Id:             "order-123",
@@ -65,16 +66,13 @@ func TestOrdersHandler_PostOrders_Success(t *testing.T) {
 
 	handler := NewOrdersHandler(mockService)
 
-	// Create request
 	body := makeBody("order-789", "offer-456", "user-789")
 	req := httptest.NewRequest(http.MethodPost, "/orders", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	// Execute
 	handler.PostOrders(w, req)
 
-	// Assert
 	if w.Code != http.StatusCreated {
 		t.Errorf("Expected status %d, got %d", http.StatusCreated, w.Code)
 	}
@@ -99,15 +97,12 @@ func TestOrdersHandler_PostOrders_InvalidBody(t *testing.T) {
 	mockService := &mockOrdersService{}
 	handler := NewOrdersHandler(mockService)
 
-	// Create request with invalid JSON
 	req := httptest.NewRequest(http.MethodPost, "/orders", bytes.NewReader([]byte("invalid json")))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	// Execute
 	handler.PostOrders(w, req)
 
-	// Assert
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
 	}
@@ -117,16 +112,13 @@ func TestOrdersHandler_PostOrders_MissingOfferId(t *testing.T) {
 	mockService := &mockOrdersService{}
 	handler := NewOrdersHandler(mockService)
 
-	// Create request without offer_id
 	body := makeBody("order-1", "", "user-789")
 	req := httptest.NewRequest(http.MethodPost, "/orders", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	// Execute
 	handler.PostOrders(w, req)
 
-	// Assert
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
 	}
@@ -136,16 +128,13 @@ func TestOrdersHandler_PostOrders_MissingUserId(t *testing.T) {
 	mockService := &mockOrdersService{}
 	handler := NewOrdersHandler(mockService)
 
-	// Create request without user_id
 	body := makeBody("order-1", "offer-456", "")
 	req := httptest.NewRequest(http.MethodPost, "/orders", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	// Execute
 	handler.PostOrders(w, req)
 
-	// Assert
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
 	}
@@ -164,10 +153,8 @@ func TestOrdersHandler_PostOrders_OfferNotFound(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	// Execute
 	handler.PostOrders(w, req)
 
-	// Assert
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
 	}
@@ -186,10 +173,8 @@ func TestOrdersHandler_PostOrders_OfferExpired(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	// Execute
 	handler.PostOrders(w, req)
 
-	// Assert
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
 	}
@@ -208,10 +193,8 @@ func TestOrdersHandler_PostOrders_OfferAlreadyUsed(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	// Execute
 	handler.PostOrders(w, req)
 
-	// Assert
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
 	}
@@ -230,10 +213,8 @@ func TestOrdersHandler_PostOrders_InvalidUser(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	// Execute
 	handler.PostOrders(w, req)
 
-	// Assert
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("Expected status %d, got %d", http.StatusBadRequest, w.Code)
 	}
@@ -252,19 +233,94 @@ func TestOrdersHandler_PostOrders_InternalError(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	// Execute
 	handler.PostOrders(w, req)
 
-	// Assert
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("Expected status %d, got %d", http.StatusInternalServerError, w.Code)
 	}
 }
 
-// Helper function for tests
+func TestOrdersHandler_FinishOrder_Twice(t *testing.T) {
+	orderID := "order-finish-1"
+	now := time.Now()
+
+	// Используем состояние заказа для симуляции его завершения
+	finished := false
+
+	expectedOrder := &api.Order{
+		Id:        orderID,
+		UserId:    "user-123",
+		OfferId:   "offer-xxx",
+		Status:    api.FINISHED,
+		StartTime: now,
+	}
+
+	mockService := &mockOrdersService{
+		createOrderFunc: func(ctx context.Context, req *orders.CreateOrderRequest) (*api.Order, error) {
+			return &api.Order{
+				Id:      orderID,
+				OfferId: req.OfferID,
+				UserId:  req.UserID,
+				Status:  api.ACTIVE,
+			}, nil
+		},
+		getOrderFunc: func(ctx context.Context, oid string) (*api.Order, error) {
+			if oid != orderID {
+				return nil, orders.ErrNoSuchOrder
+			}
+			st := api.ACTIVE
+			if finished {
+				st = api.FINISHED
+			}
+			return &api.Order{
+				Id:        orderID,
+				OfferId:   "offer-xxx",
+				UserId:    "user-123",
+				Status:    st,
+				StartTime: now,
+			}, nil
+		},
+		finishOrderFunc: func(ctx context.Context, oid string) (*api.Order, error) {
+			if oid != orderID {
+				return nil, orders.ErrNoSuchOrder
+			}
+			if finished {
+				return nil, orders.ErrOrderNotActive
+			}
+			finished = true
+			return expectedOrder, nil
+		},
+	}
+
+	handler := NewOrdersHandler(mockService)
+
+	createReqBody := makeBody(orderID, "offer-xxx", "user-123")
+	req := httptest.NewRequest(http.MethodPost, "/orders", bytes.NewReader(createReqBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handler.PostOrders(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("Expected create status %d, got %d", http.StatusCreated, w.Code)
+	}
+
+	finishReq := httptest.NewRequest(http.MethodPost, "/orders/"+orderID+"/finish", nil)
+	w2 := httptest.NewRecorder()
+	handler.PostOrdersOrderIdFinish(w2, finishReq, orderID)
+
+	if w2.Code != http.StatusOK {
+		t.Fatalf("Expected finish status %d, got %d", http.StatusOK, w2.Code)
+	}
+
+	w3 := httptest.NewRecorder()
+	handler.PostOrdersOrderIdFinish(w3, finishReq, orderID)
+
+	if w3.Code != http.StatusBadRequest && w3.Code != http.StatusConflict {
+		t.Fatalf("Expected error status for repeated finish, got %d", w3.Code)
+	}
+}
+
 func intPtr(i int) *int { return &i }
 
-// makeBody builds request body with optional fields (order_id, offer_id, user_id)
 func makeBody(orderID, offerID, userID string) []byte {
 	m := map[string]string{}
 	if orderID != "" {

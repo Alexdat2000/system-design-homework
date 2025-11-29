@@ -8,23 +8,18 @@ import (
 	"time"
 )
 
-// PaymentsClientInterface defines the interface for payment operations
 type PaymentsClientInterface interface {
 	HoldMoneyForOrder(ctx context.Context, req *PaymentHoldRequest) (*PaymentHoldResponse, error)
 	UnholdMoneyForOrder(ctx context.Context, orderID string) error
 	ChargeMoneyForOrder(ctx context.Context, orderID string, amount int) error
 }
 
-// ExternalClient handles communication with external services
-// Uses generated API client from openapi/external.yaml
 type ExternalClient struct {
 	apiClient *ClientWithResponses
 }
 
-// Ensure ExternalClient implements PaymentsClientInterface
 var _ PaymentsClientInterface = (*ExternalClient)(nil)
 
-// NewExternalClient creates a new external API client
 func NewExternalClient(baseURL string) (*ExternalClient, error) {
 	httpClient := &http.Client{
 		Timeout: 5 * time.Second,
@@ -38,7 +33,6 @@ func NewExternalClient(baseURL string) (*ExternalClient, error) {
 	return &ExternalClient{apiClient: apiClient}, nil
 }
 
-// HoldMoneyForOrder holds (freezes) money on user's card for an order
 func (c *ExternalClient) HoldMoneyForOrder(ctx context.Context, req *PaymentHoldRequest) (*PaymentHoldResponse, error) {
 	requestBody := PostHoldMoneyForOrderJSONRequestBody{
 		UserId:  &req.UserID,
@@ -55,7 +49,6 @@ func (c *ExternalClient) HoldMoneyForOrder(ctx context.Context, req *PaymentHold
 		return nil, fmt.Errorf("hold-money-for-order unexpected status: %d", resp.StatusCode())
 	}
 
-	// Parse response body for transaction_id
 	var responseBody struct {
 		TransactionID string `json:"transaction_id"`
 		Ok            bool   `json:"ok"`
@@ -70,9 +63,6 @@ func (c *ExternalClient) HoldMoneyForOrder(ctx context.Context, req *PaymentHold
 	}, nil
 }
 
-// ChargeMoneyForOrder charges money from user's card for an order
-// Note: user_id is not available in the signature, but external API requires it
-// For MVP, we'll pass empty user_id (external service will accept it)
 func (c *ExternalClient) ChargeMoneyForOrder(ctx context.Context, orderID string, amount int) error {
 	emptyUserID := ""
 	requestBody := PostClearMoneyForOrderJSONRequestBody{
@@ -93,9 +83,6 @@ func (c *ExternalClient) ChargeMoneyForOrder(ctx context.Context, orderID string
 	return nil
 }
 
-// UnholdMoneyForOrder releases (unfreezes) money on user's card
-// Note: user_id is not available in the signature, but external API requires it
-// For MVP, we'll pass empty user_id (external service will accept it)
 func (c *ExternalClient) UnholdMoneyForOrder(ctx context.Context, orderID string) error {
 	emptyUserID := ""
 	requestBody := PostUnholdMoneyForOrderJSONRequestBody{
@@ -115,7 +102,6 @@ func (c *ExternalClient) UnholdMoneyForOrder(ctx context.Context, orderID string
 	return nil
 }
 
-// GetScooterData fetches scooter charge and zone id
 func (c *ExternalClient) GetScooterData(ctx context.Context, scooterID string) (*ScooterData, error) {
 	params := GetScooterDataParams{Id: scooterID}
 	resp, err := c.apiClient.GetScooterDataWithResponse(ctx, &params)
@@ -138,7 +124,6 @@ func (c *ExternalClient) GetScooterData(ctx context.Context, scooterID string) (
 	return resp.JSON200, nil
 }
 
-// GetTariffZoneData fetches tariff zone parameters
 func (c *ExternalClient) GetTariffZoneData(ctx context.Context, zoneID string) (*TariffZone, error) {
 	params := GetTariffZoneDataParams{Id: zoneID}
 	resp, err := c.apiClient.GetTariffZoneDataWithResponse(ctx, &params)
@@ -161,7 +146,6 @@ func (c *ExternalClient) GetTariffZoneData(ctx context.Context, zoneID string) (
 	return resp.JSON200, nil
 }
 
-// GetUserProfile fetches user subscription/trust flags
 func (c *ExternalClient) GetUserProfile(ctx context.Context, userID string) (*UserProfile, error) {
 	params := GetUserProfileParams{Id: userID}
 	resp, err := c.apiClient.GetUserProfileWithResponse(ctx, &params)
@@ -184,7 +168,6 @@ func (c *ExternalClient) GetUserProfile(ctx context.Context, userID string) (*Us
 	return resp.JSON200, nil
 }
 
-// GetConfigs fetches dynamic configuration
 func (c *ExternalClient) GetConfigs(ctx context.Context) (*DynamicConfigs, error) {
 	resp, err := c.apiClient.GetConfigsWithResponse(ctx)
 	if err != nil {
@@ -199,12 +182,11 @@ func (c *ExternalClient) GetConfigs(ctx context.Context) (*DynamicConfigs, error
 		return nil, fmt.Errorf("configs: empty response")
 	}
 
-	// Map to struct with defaults per ADR (fallbacks)
 	cfg := &DynamicConfigs{
-		Surge:                          1.0,
-		LowChargeDiscount:              1.0,
-		LowChargeThresholdPercent:      0,
-		IncompleteRideThresholdSeconds: 0,
+		Surge:                          1.2,
+		LowChargeDiscount:              0.7,
+		LowChargeThresholdPercent:      28,
+		IncompleteRideThresholdSeconds: 5,
 	}
 
 	m := *resp.JSON200

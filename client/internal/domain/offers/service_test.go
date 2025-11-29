@@ -9,8 +9,6 @@ import (
 	"time"
 )
 
-// --- Mocks ---
-
 type mockRepo struct {
 	getOfferByUserScooterFunc func(ctx context.Context, userID, scooterID string) (*api.Offer, error)
 	saveOfferFunc             func(ctx context.Context, offer *api.Offer) error
@@ -24,7 +22,9 @@ func (m *mockRepo) SaveOffer(ctx context.Context, offer *api.Offer) error {
 	}
 	return nil
 }
-func (m *mockRepo) MarkOfferAsUsed(ctx context.Context, offerID string) (bool, error) { return false, nil }
+func (m *mockRepo) MarkOfferAsUsed(ctx context.Context, offerID string) (bool, error) {
+	return false, nil
+}
 func (m *mockRepo) GetOfferByUserScooter(ctx context.Context, userID, scooterID string) (*api.Offer, error) {
 	if m.getOfferByUserScooterFunc != nil {
 		return m.getOfferByUserScooterFunc(ctx, userID, scooterID)
@@ -150,7 +150,6 @@ func TestCreateOffer_ZoneFallbackFromCache(t *testing.T) {
 	}
 	svc := NewService(repo, ext)
 
-	// Прогреем кэш зон
 	svc.zoneCache["zone-777"] = zoneCacheEntry{
 		zone:      &external.TariffZone{Id: "zone-777", PricePerMinute: 9, PriceUnlock: 1, DefaultDeposit: 2},
 		expiresAt: time.Now().Add(9 * time.Minute),
@@ -193,9 +192,9 @@ func TestCreateOffer_Pricing_SurgeAndLowCharge_Discounts_SubscriptionTrusted(t *
 		},
 		cfgFunc: func(ctx context.Context) (*external.DynamicConfigs, error) {
 			return &external.DynamicConfigs{
-				Surge:                        1.2,
-				LowChargeDiscount:            0.5,
-				LowChargeThresholdPercent:    30,
+				Surge:                          1.2,
+				LowChargeDiscount:              0.5,
+				LowChargeThresholdPercent:      30,
 				IncompleteRideThresholdSeconds: 0,
 			}, nil
 		},
@@ -208,19 +207,15 @@ func TestCreateOffer_Pricing_SurgeAndLowCharge_Discounts_SubscriptionTrusted(t *
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Проверяем цены: 10 * 1.2 = 12; при низком заряде 12 * 0.5 = 6
 	if captured.PricePerMinute != 6 || offer.PricePerMinute != 6 {
 		t.Errorf("expected price_per_minute 6, got saved=%d offer=%d", captured.PricePerMinute, offer.PricePerMinute)
 	}
-	// Подписка => unlock 0
 	if captured.PriceUnlock != 0 || offer.PriceUnlock != 0 {
 		t.Errorf("expected price_unlock 0, got saved=%d offer=%d", captured.PriceUnlock, offer.PriceUnlock)
 	}
-	// Trusted => deposit 0
 	if captured.Deposit != 0 || offer.Deposit != 0 {
 		t.Errorf("expected deposit 0, got saved=%d offer=%d", captured.Deposit, offer.Deposit)
 	}
-	// TTL/ExpiresAt должен быть в будущем
 	if !offer.ExpiresAt.After(time.Now()) {
 		t.Errorf("expected ExpiresAt in future")
 	}
