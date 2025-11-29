@@ -11,14 +11,12 @@ import (
 )
 
 func TestOrderCache_SetGetInvalidate(t *testing.T) {
-	// Start in-memory Redis
 	s, err := miniredis.Run()
 	if err != nil {
 		t.Fatalf("failed to start miniredis: %v", err)
 	}
 	defer s.Close()
 
-	// Create client for miniredis
 	url := fmt.Sprintf("redis://%s/0", s.Addr())
 	rcli, err := NewClient(url)
 	if err != nil {
@@ -29,7 +27,6 @@ func TestOrderCache_SetGetInvalidate(t *testing.T) {
 	cache := NewOrderCache(rcli)
 	ctx := context.Background()
 
-	// Data
 	now := time.Now()
 	order := &api.Order{
 		Id:        "order-cache-1",
@@ -39,12 +36,10 @@ func TestOrderCache_SetGetInvalidate(t *testing.T) {
 		Status:    api.ACTIVE,
 	}
 
-	// Set
 	if err := cache.SetOrder(ctx, order, time.Minute); err != nil {
 		t.Fatalf("SetOrder error: %v", err)
 	}
 
-	// Get
 	got, err := cache.GetOrder(ctx, order.Id)
 	if err != nil {
 		t.Fatalf("GetOrder error: %v", err)
@@ -53,12 +48,10 @@ func TestOrderCache_SetGetInvalidate(t *testing.T) {
 		t.Fatalf("unexpected order from cache: %+v", got)
 	}
 
-	// Invalidate
 	if err := cache.Invalidate(ctx, order.Id); err != nil {
 		t.Fatalf("Invalidate error: %v", err)
 	}
 
-	// Ensure removed
 	got2, err := cache.GetOrder(ctx, order.Id)
 	if err != nil {
 		t.Fatalf("GetOrder after invalidate error: %v", err)
@@ -69,14 +62,12 @@ func TestOrderCache_SetGetInvalidate(t *testing.T) {
 }
 
 func TestOrderCache_TTL_Expiry(t *testing.T) {
-	// Start in-memory Redis
 	s, err := miniredis.Run()
 	if err != nil {
 		t.Fatalf("failed to start miniredis: %v", err)
 	}
 	defer s.Close()
 
-	// Create client for miniredis
 	url := fmt.Sprintf("redis://%s/0", s.Addr())
 	rcli, err := NewClient(url)
 	if err != nil {
@@ -95,12 +86,10 @@ func TestOrderCache_TTL_Expiry(t *testing.T) {
 		Status:    api.ACTIVE,
 	}
 
-	// Set with short TTL
 	if err := cache.SetOrder(ctx, order, 2*time.Second); err != nil {
 		t.Fatalf("SetOrder error: %v", err)
 	}
 
-	// Should exist immediately
 	got, err := cache.GetOrder(ctx, order.Id)
 	if err != nil {
 		t.Fatalf("GetOrder error: %v", err)
@@ -109,10 +98,8 @@ func TestOrderCache_TTL_Expiry(t *testing.T) {
 		t.Fatalf("expected order present before expiry")
 	}
 
-	// Fast forward miniredis time past TTL
 	s.FastForward(3 * time.Second)
 
-	// Should be expired
 	got2, err := cache.GetOrder(ctx, order.Id)
 	if err != nil {
 		t.Fatalf("GetOrder after expiry error: %v", err)

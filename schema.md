@@ -37,7 +37,7 @@ client/
 │       └── config.go
 │
 ├── migrations/
-│   └── 001_create_orders_and_paynents.sql    # Создание таблиц orders и payment_transactions
+│   └── 001_create_orders_and_payments.sql    # Создание таблиц orders и payment_transactions
 ├── api/
 │   └── api.gen.go
 └── go.mod

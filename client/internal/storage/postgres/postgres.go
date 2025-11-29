@@ -8,19 +8,16 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// DB represents a PostgreSQL connection pool
 type DB struct {
 	Pool *pgxpool.Pool
 }
 
-// NewDB creates a new PostgreSQL connection pool
 func NewDB(databaseURL string) (*DB, error) {
 	config, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse database URL: %w", err)
 	}
 
-	// Configure connection pool
 	config.MaxConns = 25
 	config.MinConns = 5
 	config.MaxConnLifetime = time.Hour
@@ -32,7 +29,6 @@ func NewDB(databaseURL string) (*DB, error) {
 		return nil, fmt.Errorf("failed to create connection pool: %w", err)
 	}
 
-	// Test connection
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -43,7 +39,6 @@ func NewDB(databaseURL string) (*DB, error) {
 	return &DB{Pool: pool}, nil
 }
 
-// Close closes the database connection pool
 func (db *DB) Close() {
 	db.Pool.Close()
 }

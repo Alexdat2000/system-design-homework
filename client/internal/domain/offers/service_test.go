@@ -181,7 +181,6 @@ func TestCreateOffer_Pricing_SurgeAndLowCharge_Discounts_SubscriptionTrusted(t *
 	}
 	ext := &mockExternal{
 		scooterFunc: func(ctx context.Context, scooterID string) (*external.ScooterData, error) {
-			// Низкий заряд для применения скидки
 			return &external.ScooterData{Id: scooterID, ZoneId: "zone-A", Charge: 10}, nil
 		},
 		zoneFunc: func(ctx context.Context, zoneID string) (*external.TariffZone, error) {

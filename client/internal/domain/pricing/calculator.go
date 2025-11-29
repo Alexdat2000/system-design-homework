@@ -5,14 +5,14 @@ import "math"
 // Inputs represents all parameters required to compute pricing according to ADR.
 type Inputs struct {
 	// Base tariff values from zone service
-	ZonePricePerMinute  int
-	ZonePriceUnlock     int
-	ZoneDefaultDeposit  int
+	ZonePricePerMinute int
+	ZonePriceUnlock    int
+	ZoneDefaultDeposit int
 
 	// Dynamic configs
-	Surge                       float64
-	LowChargeDiscount           float64
-	LowChargeThresholdPercent   int
+	Surge                     float64
+	LowChargeDiscount         float64
+	LowChargeThresholdPercent int
 
 	// Runtime context
 	ScooterChargePercent int

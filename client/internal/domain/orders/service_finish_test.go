@@ -52,7 +52,6 @@ type mockPayments struct {
 }
 
 func (m *mockPayments) HoldMoneyForOrder(ctx context.Context, req *external.PaymentHoldRequest) (*external.PaymentHoldResponse, error) {
-	// not used in finish tests
 	return &external.PaymentHoldResponse{
 		TransactionID: "txn-hold",
 		Success:       true,

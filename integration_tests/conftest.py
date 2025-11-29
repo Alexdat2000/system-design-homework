@@ -137,7 +137,7 @@ def docker_services() -> Generator[None, None, None]:
     Set SKIP_DOCKER_COMPOSE=1 to skip docker-compose commands (for already running services).
     """
     if SKIP_DOCKER_COMPOSE:
-        print("\n⏭️ Skipping Docker Compose (SKIP_DOCKER_COMPOSE=1)")
+        print("\n Skipping Docker Compose (SKIP_DOCKER_COMPOSE=1)")
         print("Using existing services...")
         
         # Just verify services are running
@@ -151,11 +151,11 @@ def docker_services() -> Generator[None, None, None]:
             client_client.close()
             external_client.close()
         
-        print("✅ All services are healthy!")
+        print(" All services are healthy!")
         yield
         return
     
-    print("\n🚀 Starting Docker services...")
+    print("\n Starting Docker services...")
     
     # Stop any existing containers
     run_docker_compose(["down", "-v", "--remove-orphans"], check=False)
@@ -187,12 +187,12 @@ def docker_services() -> Generator[None, None, None]:
             client_client.close()
             external_client.close()
         
-        print("✅ All services are healthy!")
+        print(" All services are healthy!")
         
         yield
         
     finally:
-        print("\n🛑 Stopping Docker services...")
+        print("\n Stopping Docker services...")
         run_docker_compose(["down", "-v"], check=False)
         print("Docker services stopped.")
 

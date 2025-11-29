@@ -10,27 +10,21 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// OrderRepository implements orders.Repository using PostgreSQL
 type OrderRepository struct {
 	db *DB
 }
 
-// NewOrderRepository creates a new order repository
 func NewOrderRepository(db *DB) *OrderRepository {
 	return &OrderRepository{db: db}
 }
 
-// CreateOrder creates a new order and payment transaction in a single database transaction
-// According to ADR: order and payment transaction must be created atomically
 func (r *OrderRepository) CreateOrder(ctx context.Context, order *api.Order, transactionID string) error {
-	// Start transaction
 	tx, err := r.db.Pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
-	// Calculate total_amount (initial amount = price_unlock)
 	totalAmount := 0
 	if order.CurrentAmount != nil {
 		totalAmount = *order.CurrentAmount
@@ -38,7 +32,6 @@ func (r *OrderRepository) CreateOrder(ctx context.Context, order *api.Order, tra
 		totalAmount = *order.PriceUnlock
 	}
 
-	// Insert order
 	orderQuery := `
 		INSERT INTO orders (
 			id, user_id, scooter_id, offer_id, 
@@ -66,7 +59,6 @@ func (r *OrderRepository) CreateOrder(ctx context.Context, order *api.Order, tra
 		return fmt.Errorf("failed to insert order: %w", err)
 	}
 
-	// Insert payment transaction (HOLD)
 	depositAmount := 0
 	if order.Deposit != nil {
 		depositAmount = *order.Deposit
@@ -94,7 +86,6 @@ func (r *OrderRepository) CreateOrder(ctx context.Context, order *api.Order, tra
 		return fmt.Errorf("failed to insert payment transaction: %w", err)
 	}
 
-	// Commit transaction
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
@@ -102,7 +93,6 @@ func (r *OrderRepository) CreateOrder(ctx context.Context, order *api.Order, tra
 	return nil
 }
 
-// GetOrderByID retrieves an order by its ID
 func (r *OrderRepository) GetOrderByID(ctx context.Context, orderID string) (*api.Order, error) {
 	query := `
 		SELECT 
@@ -146,7 +136,6 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, orderID string) (*ap
 	return &order, nil
 }
 
-// GetOrderByOfferID retrieves an order by offer ID (for idempotency check)
 func (r *OrderRepository) GetOrderByOfferID(ctx context.Context, offerID string) (*api.Order, error) {
 	query := `
 		SELECT
@@ -192,7 +181,6 @@ func (r *OrderRepository) GetOrderByOfferID(ctx context.Context, offerID string)
 	return &order, nil
 }
 
-// FinishOrder finalizes order and appends payment transactions (CLEAR, REFUND)
 func (r *OrderRepository) FinishOrder(ctx context.Context, orderID string, finishTime time.Time, durationSeconds int, totalAmount int, finalStatus api.OrderStatus, chargeSuccess bool, unholdSuccess bool, chargeTxID string) error {
 	tx, err := r.db.Pool.Begin(ctx)
 	if err != nil {
@@ -202,7 +190,6 @@ func (r *OrderRepository) FinishOrder(ctx context.Context, orderID string, finis
 
 	now := time.Now()
 
-	// Update order fields
 	updateOrder := `
 		UPDATE orders
 		SET finish_time = $1,
@@ -216,7 +203,6 @@ func (r *OrderRepository) FinishOrder(ctx context.Context, orderID string, finis
 		return fmt.Errorf("failed to update order on finish: %w", err)
 	}
 
-	// Fetch user_id and deposit for transactions
 	var userID string
 	var deposit int
 	row := tx.QueryRow(ctx, `SELECT user_id, deposit FROM orders WHERE id = $1`, orderID)
@@ -224,7 +210,6 @@ func (r *OrderRepository) FinishOrder(ctx context.Context, orderID string, finis
 		return fmt.Errorf("failed to fetch order for transactions: %w", err)
 	}
 
-	// Insert CLEAR transaction
 	clearStatus := "FAILED"
 	if chargeSuccess {
 		clearStatus = "SUCCESS"
@@ -240,7 +225,6 @@ func (r *OrderRepository) FinishOrder(ctx context.Context, orderID string, finis
 		return fmt.Errorf("failed to insert CLEAR transaction: %w", err)
 	}
 
-	// Insert REFUND (unhold) transaction (amount equals deposit for audit)
 	refundStatus := "FAILED"
 	if unholdSuccess {
 		refundStatus = "SUCCESS"
@@ -262,7 +246,6 @@ func (r *OrderRepository) FinishOrder(ctx context.Context, orderID string, finis
 	return nil
 }
 
-// Helper function to get int value from pointer
 func getIntValue(ptr *int) int {
 	if ptr == nil {
 		return 0

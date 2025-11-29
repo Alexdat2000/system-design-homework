@@ -244,7 +244,6 @@ func TestOrdersHandler_FinishOrder_Twice(t *testing.T) {
 	orderID := "order-finish-1"
 	now := time.Now()
 
-	// Используем состояние заказа для симуляции его завершения
 	finished := false
 
 	expectedOrder := &api.Order{

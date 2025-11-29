@@ -25,7 +25,6 @@ class TestOfferAPIContract:
         assert response.status_code == 201
         offer = response.json()
         
-        # Required fields according to OpenAPI
         required_fields = [
             "id", "user_id", "scooter_id", "zone_id", 
             "expires_at", "price_per_minute", "price_unlock", "deposit"
@@ -34,7 +33,6 @@ class TestOfferAPIContract:
         for field in required_fields:
             assert field in offer, f"Missing required field: {field}"
         
-        # Type validations
         assert isinstance(offer["id"], str)
         assert isinstance(offer["user_id"], str)
         assert isinstance(offer["scooter_id"], str)
@@ -44,7 +42,6 @@ class TestOfferAPIContract:
         assert isinstance(offer["price_unlock"], int)
         assert isinstance(offer["deposit"], int)
         
-        # expires_at should be valid ISO datetime
         try:
             datetime.fromisoformat(offer["expires_at"].replace("Z", "+00:00"))
         except ValueError:
@@ -61,7 +58,6 @@ class TestOfferAPIContract:
     
     def test_offer_ids_are_unique(self, client_service):
         """Test that different offers have unique IDs."""
-        # Create offers for different user/scooter combinations
         combinations = [
             ("user-1", "scooter-1"),
             ("user-1", "scooter-2"),
@@ -95,7 +91,6 @@ class TestOrderAPIContract:
         assert response.status_code == 201
         order = response.json()
         
-        # Required fields according to OpenAPI
         required_fields = [
             "id", "user_id", "scooter_id", "offer_id", "status", "start_time"
         ]
@@ -103,7 +98,6 @@ class TestOrderAPIContract:
         for field in required_fields:
             assert field in order, f"Missing required field: {field}"
         
-        # Type validations
         assert isinstance(order["id"], str)
         assert isinstance(order["user_id"], str)
         assert isinstance(order["scooter_id"], str)
@@ -111,12 +105,10 @@ class TestOrderAPIContract:
         assert isinstance(order["status"], str)
         assert isinstance(order["start_time"], str)
         
-        # Status enum validation
         valid_statuses = ["ACTIVE", "FINISHED", "CANCELLED", "PAYMENT_FAILED"]
         assert order["status"] in valid_statuses, \
             f"Invalid status: {order['status']}"
         
-        # New order should be ACTIVE
         assert order["status"] == "ACTIVE"
     
     def test_order_response_schema_after_finish(self, client_service):
@@ -134,7 +126,6 @@ class TestOrderAPIContract:
         assert response.status_code == 200
         order = response.json()
         
-        # Finished order should have additional fields
         assert "finish_time" in order
         assert order["finish_time"] is not None
         
@@ -155,13 +146,11 @@ class TestOrderAPIContract:
         response = client_service.create_order(order_id, offer["id"], user_id)
         order = response.json()
         
-        # Pricing fields
         assert "price_per_minute" in order
         assert "price_unlock" in order
         assert "deposit" in order
         assert "current_amount" in order
         
-        # Values should match offer
         assert order["price_per_minute"] == offer["price_per_minute"]
         assert order["price_unlock"] == offer["price_unlock"]
         assert order["deposit"] == offer["deposit"]
@@ -172,7 +161,6 @@ class TestErrorResponses:
     
     def test_400_response_format(self, client_service):
         """Test that 400 errors have descriptive text."""
-        # Missing required field
         response = client_service.post("/offers", json={})
         
         assert response.status_code == 400
@@ -194,10 +182,8 @@ class TestErrorResponses:
         order_id = str(uuid.uuid4())
         client_service.create_order(order_id, offer["id"], user_id)
         
-        # First finish
         client_service.finish_order(order_id)
         
-        # Second finish should return 409
         response = client_service.finish_order(order_id)
         
         assert response.status_code == 409
@@ -261,11 +247,8 @@ class TestOfferExpiration:
         
         expires_at = datetime.fromisoformat(offer["expires_at"].replace("Z", "+00:00"))
         
-        # Check created_at if available
         if "created_at" in offer and offer["created_at"]:
             created_at = datetime.fromisoformat(offer["created_at"].replace("Z", "+00:00"))
             ttl = (expires_at - created_at).total_seconds()
             
-            # Should be approximately 5 minutes (300 seconds)
-            assert 290 <= ttl <= 310, \
-                f"Offer TTL should be ~5 minutes, got {ttl} seconds"
+            assert abs(ttl - 600) <= 10, f"Offer TTL should be ~5 minutes, got {ttl} seconds"

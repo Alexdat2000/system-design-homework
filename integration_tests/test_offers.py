@@ -29,7 +29,6 @@ class TestOfferCreation:
         
         offer = response.json()
         
-        # Verify required fields from OpenAPI spec
         assert "id" in offer
         assert offer["user_id"] == user["id"]
         assert offer["scooter_id"] == scooter["id"]

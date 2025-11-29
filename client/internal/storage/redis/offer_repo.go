@@ -10,12 +10,10 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 )
 
-// OfferRepository implements offer storage over Redis
 type OfferRepository struct {
 	client *Client
 }
 
-// NewOfferRepository creates a new offer repository with Redis client
 func NewOfferRepository(client *Client) *OfferRepository {
 	return &OfferRepository{client: client}
 }
@@ -32,8 +30,6 @@ func keyIdxUserScooter(userID, scooterID string) string {
 	return fmt.Sprintf("offer_idx:user:%s:scooter:%s", userID, scooterID)
 }
 
-// GetOffer retrieves an offer by ID from Redis
-// Returns (nil, nil) if offer not found
 func (r *OfferRepository) GetOffer(ctx context.Context, offerID string) (*api.Offer, error) {
 	if r.client == nil || r.client.rdb == nil {
 		return nil, fmt.Errorf("redis client is not initialized")
@@ -55,8 +51,6 @@ func (r *OfferRepository) GetOffer(ctx context.Context, offerID string) (*api.Of
 	return &offer, nil
 }
 
-// MarkOfferAsUsed tries to atomically mark the offer as used via SETNX on a separate key.
-// It sets the TTL of the used-key equal to the remaining TTL of the offer key to avoid leaks.
 func (r *OfferRepository) MarkOfferAsUsed(ctx context.Context, offerID string) (bool, error) {
 	if r.client == nil || r.client.rdb == nil {
 		return false, fmt.Errorf("redis client is not initialized")
@@ -70,7 +64,6 @@ func (r *OfferRepository) MarkOfferAsUsed(ctx context.Context, offerID string) (
 		return false, fmt.Errorf("redis TTL failed: %w", err)
 	}
 
-	// If TTL is negative (no key or no expiration), fallback to 5 minutes as a safe default
 	if ttl <= 0 {
 		ttl = 5 * time.Minute
 	}
@@ -83,8 +76,6 @@ func (r *OfferRepository) MarkOfferAsUsed(ctx context.Context, offerID string) (
 	return ok, nil
 }
 
-// SaveOffer stores offer with TTL derived from offer.ExpiresAt.
-// Returns error if offer is already expired by the time of call.
 func (r *OfferRepository) SaveOffer(ctx context.Context, offer *api.Offer) error {
 	if r.client == nil || r.client.rdb == nil {
 		return fmt.Errorf("redis client is not initialized")
@@ -99,7 +90,6 @@ func (r *OfferRepository) SaveOffer(ctx context.Context, offer *api.Offer) error
 	}
 
 	ttl := time.Until(offer.ExpiresAt)
-	// Guarantee minimal TTL > 0
 	if ttl <= 0 {
 		ttl = time.Second
 	}
@@ -116,7 +106,6 @@ func (r *OfferRepository) SaveOffer(ctx context.Context, offer *api.Offer) error
 	return nil
 }
 
-// GetOfferByUserScooter returns an existing valid offer for (user_id, scooter_id) if present
 func (r *OfferRepository) GetOfferByUserScooter(ctx context.Context, userID, scooterID string) (*api.Offer, error) {
 	if r.client == nil || r.client.rdb == nil {
 		return nil, fmt.Errorf("redis client is not initialized")
@@ -129,11 +118,9 @@ func (r *OfferRepository) GetOfferByUserScooter(ctx context.Context, userID, sco
 		}
 		return nil, fmt.Errorf("redis GET index failed: %w", err)
 	}
-	// fetch offer itself
 	return r.GetOffer(ctx, offerID)
 }
 
-// SetOfferByUserScooter indexes offer id by (user_id, scooter_id) with same TTL as offer key
 func (r *OfferRepository) SetOfferByUserScooter(ctx context.Context, userID, scooterID, offerID string) error {
 	if r.client == nil || r.client.rdb == nil {
 		return fmt.Errorf("redis client is not initialized")
@@ -143,7 +130,6 @@ func (r *OfferRepository) SetOfferByUserScooter(ctx context.Context, userID, sco
 	if err != nil && err != goredis.Nil {
 		return fmt.Errorf("redis TTL failed: %w", err)
 	}
-	// Safety net
 	if ttl <= 0 {
 		ttl = 5 * time.Minute
 	}

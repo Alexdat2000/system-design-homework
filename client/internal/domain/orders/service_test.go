@@ -9,7 +9,6 @@ import (
 	"time"
 )
 
-// mockOrderRepository is a mock implementation of Repository
 type mockOrderRepository struct {
 	createOrderFunc       func(ctx context.Context, order *api.Order, transactionID string) error
 	getOrderByIDFunc      func(ctx context.Context, orderID string) (*api.Order, error)
@@ -29,8 +28,7 @@ func (m *mockOrderRepository) GetOrderByID(ctx context.Context, orderID string) 
 	}
 	return nil, nil
 }
- 
-// Satisfy updated Repository interface (FinishOrder used by finish flow; not exercised in current tests)
+
 func (m *mockOrderRepository) FinishOrder(ctx context.Context, orderID string, finishTime time.Time, durationSeconds int, totalAmount int, finalStatus api.OrderStatus, chargeSuccess bool, unholdSuccess bool, chargeTxID string) error {
 	return nil
 }
@@ -42,7 +40,6 @@ func (m *mockOrderRepository) GetOrderByOfferID(ctx context.Context, offerID str
 	return nil, nil
 }
 
-// mockOfferRepository is a mock implementation of offers.Repository
 type mockOfferRepository struct {
 	getOfferFunc        func(ctx context.Context, offerID string) (*api.Offer, error)
 	markOfferAsUsedFunc func(ctx context.Context, offerID string) (bool, error)
@@ -62,7 +59,6 @@ func (m *mockOfferRepository) MarkOfferAsUsed(ctx context.Context, offerID strin
 	return true, nil
 }
 
-// Below are no-op stubs to satisfy the expanded offers.Repository interface
 func (m *mockOfferRepository) GetOfferByUserScooter(ctx context.Context, userID, scooterID string) (*api.Offer, error) {
 	return nil, nil
 }
@@ -75,7 +71,6 @@ func (m *mockOfferRepository) SetOfferByUserScooter(ctx context.Context, userID,
 	return nil
 }
 
-// mockPaymentsClient is a mock implementation of external.PaymentsClientInterface
 type mockPaymentsClient struct {
 	holdMoneyFunc   func(ctx context.Context, req *external.PaymentHoldRequest) (*external.PaymentHoldResponse, error)
 	unholdMoneyFunc func(ctx context.Context, orderID string) error
@@ -107,7 +102,6 @@ func (m *mockPaymentsClient) ChargeMoneyForOrder(ctx context.Context, orderID st
 }
 
 func TestService_CreateOrder_Success(t *testing.T) {
-	// Setup
 	now := time.Now()
 	validOffer := &api.Offer{
 		Id:             "offer-123",
@@ -126,7 +120,7 @@ func TestService_CreateOrder_Success(t *testing.T) {
 			return nil, nil
 		},
 		getOrderByOfferIDFunc: func(ctx context.Context, offerID string) (*api.Order, error) {
-			return nil, nil // No existing order
+			return nil, nil
 		},
 		createOrderFunc: func(ctx context.Context, order *api.Order, transactionID string) error {
 			if order.OfferId != "offer-123" {
@@ -153,7 +147,7 @@ func TestService_CreateOrder_Success(t *testing.T) {
 			return validOffer, nil
 		},
 		markOfferAsUsedFunc: func(ctx context.Context, offerID string) (bool, error) {
-			return true, nil // Successfully marked as used
+			return true, nil
 		},
 	}
 
@@ -174,7 +168,6 @@ func TestService_CreateOrder_Success(t *testing.T) {
 
 	service := NewService(orderRepo, offerRepo, paymentsClient)
 
-	// Execute
 	req := &CreateOrderRequest{
 		OrderID: "order-new-123",
 		OfferID: "offer-123",
@@ -182,7 +175,6 @@ func TestService_CreateOrder_Success(t *testing.T) {
 	}
 	order, err := service.CreateOrder(context.Background(), req)
 
-	// Assert
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -213,7 +205,6 @@ func TestService_CreateOrder_Success(t *testing.T) {
 }
 
 func TestService_CreateOrder_Idempotency(t *testing.T) {
-	// Setup - order already exists
 	existingOrder := &api.Order{
 		Id:      "order-existing",
 		OfferId: "offer-123",
@@ -235,7 +226,6 @@ func TestService_CreateOrder_Idempotency(t *testing.T) {
 
 	service := NewService(orderRepo, offerRepo, paymentsClient)
 
-	// Execute
 	req := &CreateOrderRequest{
 		OrderID: "order-existing",
 		OfferID: "offer-123",
@@ -243,7 +233,6 @@ func TestService_CreateOrder_Idempotency(t *testing.T) {
 	}
 	order, err := service.CreateOrder(context.Background(), req)
 
-	// Assert
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -253,7 +242,6 @@ func TestService_CreateOrder_Idempotency(t *testing.T) {
 	if order.Id != "order-existing" {
 		t.Errorf("Expected existing order ID, got %s", order.Id)
 	}
-	// Verify that offer was not checked and payment was not called
 }
 
 func TestService_CreateOrder_OfferNotFound(t *testing.T) {
@@ -265,7 +253,7 @@ func TestService_CreateOrder_OfferNotFound(t *testing.T) {
 
 	offerRepo := &mockOfferRepository{
 		getOfferFunc: func(ctx context.Context, offerID string) (*api.Offer, error) {
-			return nil, nil // Offer not found
+			return nil, nil
 		},
 	}
 
@@ -292,7 +280,7 @@ func TestService_CreateOrder_OfferExpired(t *testing.T) {
 	expiredOffer := &api.Offer{
 		Id:        "offer-123",
 		UserId:    "user-456",
-		ExpiresAt: now.Add(-5 * time.Minute), // Expired
+		ExpiresAt: now.Add(-5 * time.Minute),
 	}
 
 	orderRepo := &mockOrderRepository{
@@ -329,7 +317,7 @@ func TestService_CreateOrder_InvalidUser(t *testing.T) {
 	now := time.Now()
 	offer := &api.Offer{
 		Id:        "offer-123",
-		UserId:    "user-456", // Different user
+		UserId:    "user-456",
 		ExpiresAt: now.Add(5 * time.Minute),
 	}
 
@@ -351,7 +339,7 @@ func TestService_CreateOrder_InvalidUser(t *testing.T) {
 	req := &CreateOrderRequest{
 		OrderID: "order-invalid-user",
 		OfferID: "offer-123",
-		UserID:  "user-999", // Different user
+		UserID:  "user-999",
 	}
 	order, err := service.CreateOrder(context.Background(), req)
 
@@ -382,7 +370,7 @@ func TestService_CreateOrder_OfferAlreadyUsed(t *testing.T) {
 			return validOffer, nil
 		},
 		markOfferAsUsedFunc: func(ctx context.Context, offerID string) (bool, error) {
-			return false, nil // Already used
+			return false, nil
 		},
 	}
 
@@ -431,7 +419,7 @@ func TestService_CreateOrder_PaymentHoldFailed(t *testing.T) {
 	paymentsClient := &mockPaymentsClient{
 		holdMoneyFunc: func(ctx context.Context, req *external.PaymentHoldRequest) (*external.PaymentHoldResponse, error) {
 			return &external.PaymentHoldResponse{
-				Success: false, // Payment failed
+				Success: false,
 			}, nil
 		},
 	}
