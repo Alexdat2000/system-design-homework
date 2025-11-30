@@ -40,6 +40,14 @@ func (m *mockOrderRepository) GetOrderByOfferID(ctx context.Context, offerID str
 	return nil, nil
 }
 
+func (m *mockOrderRepository) GetOldOrders(ctx context.Context, olderThan time.Duration) ([]*api.Order, error) {
+	return nil, nil
+}
+
+func (m *mockOrderRepository) DeleteOrders(ctx context.Context, orderIDs []string) error {
+	return nil
+}
+
 type mockOfferRepository struct {
 	getOfferFunc        func(ctx context.Context, offerID string) (*api.Offer, error)
 	markOfferAsUsedFunc func(ctx context.Context, offerID string) (bool, error)

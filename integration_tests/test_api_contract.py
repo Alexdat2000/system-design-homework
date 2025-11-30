@@ -4,6 +4,7 @@ Integration tests for API contract validation.
 Tests verify that API responses match OpenAPI specification.
 """
 
+import re
 import uuid
 from datetime import datetime
 
@@ -13,6 +14,29 @@ import pytest
 def unique_user():
     """Generate a unique user ID to avoid offer cache conflicts between tests."""
     return f"test-user-{uuid.uuid4()}"
+
+
+def normalize_iso_datetime(iso_str: str) -> str:
+    """
+    Normalize ISO datetime string by truncating nanoseconds to microseconds.
+    
+    Go's time.Time serializes to RFC3339Nano format with nanoseconds (9 digits),
+    but Python's datetime.fromisoformat() only supports microseconds (6 digits).
+    
+    Example:
+        Input:  "2025-11-30T20:47:37.042099855Z"
+        Output: "2025-11-30T20:47:37.042099+00:00"
+    """
+    # Replace Z with +00:00 first
+    normalized = iso_str.replace("Z", "+00:00")
+    
+    # Match fractional seconds with more than 6 digits: .123456789+00:00
+    # Truncate to 6 digits (microseconds)
+    pattern = r'\.(\d{6})\d+(\+00:00)'
+    replacement = r'.\1\2'
+    normalized = re.sub(pattern, replacement, normalized)
+    
+    return normalized
 
 
 class TestOfferAPIContract:
@@ -43,7 +67,9 @@ class TestOfferAPIContract:
         assert isinstance(offer["deposit"], int)
         
         try:
-            datetime.fromisoformat(offer["expires_at"].replace("Z", "+00:00"))
+            # Нормализуем ISO строку: обрезаем наносекунды до микросекунд для совместимости с Python
+            expires_at_str = normalize_iso_datetime(offer["expires_at"])
+            datetime.fromisoformat(expires_at_str)
         except ValueError:
             pytest.fail(f"expires_at is not valid ISO datetime: {offer['expires_at']}")
     
@@ -234,7 +260,8 @@ class TestOfferExpiration:
         response = client_service.create_offer("user-1", "scooter-1")
         offer = response.json()
         
-        expires_at = datetime.fromisoformat(offer["expires_at"].replace("Z", "+00:00"))
+        expires_at_str = normalize_iso_datetime(offer["expires_at"])
+        expires_at = datetime.fromisoformat(expires_at_str)
         now = datetime.now(expires_at.tzinfo)
         
         assert expires_at > now, \
@@ -245,10 +272,12 @@ class TestOfferExpiration:
         response = client_service.create_offer("user-2", "scooter-2")
         offer = response.json()
         
-        expires_at = datetime.fromisoformat(offer["expires_at"].replace("Z", "+00:00"))
+        expires_at_str = normalize_iso_datetime(offer["expires_at"])
+        expires_at = datetime.fromisoformat(expires_at_str)
         
         if "created_at" in offer and offer["created_at"]:
-            created_at = datetime.fromisoformat(offer["created_at"].replace("Z", "+00:00"))
+            created_at_str = normalize_iso_datetime(offer["created_at"])
+            created_at = datetime.fromisoformat(created_at_str)
             ttl = (expires_at - created_at).total_seconds()
             
             assert abs(ttl - 600) <= 10, f"Offer TTL should be ~5 minutes, got {ttl} seconds"

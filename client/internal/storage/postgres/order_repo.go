@@ -246,6 +246,83 @@ func (r *OrderRepository) FinishOrder(ctx context.Context, orderID string, finis
 	return nil
 }
 
+func (r *OrderRepository) GetOldOrders(ctx context.Context, olderThan time.Duration) ([]*api.Order, error) {
+	cutoffTime := time.Now().Add(-olderThan)
+	
+	query := `
+		SELECT 
+			id, user_id, scooter_id, offer_id,
+			price_per_minute, price_unlock, deposit, total_amount,
+			status, start_time, finish_time, duration_seconds
+		FROM orders
+		WHERE created_at < $1
+		ORDER BY created_at ASC
+	`
+
+	rows, err := r.db.Pool.Query(ctx, query, cutoffTime)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query old orders: %w", err)
+	}
+	defer rows.Close()
+
+	var orders []*api.Order
+	for rows.Next() {
+		var order api.Order
+		var status string
+		var finishTime *time.Time
+		var durationSeconds *int
+
+		err := rows.Scan(
+			&order.Id,
+			&order.UserId,
+			&order.ScooterId,
+			&order.OfferId,
+			&order.PricePerMinute,
+			&order.PriceUnlock,
+			&order.Deposit,
+			&order.CurrentAmount,
+			&status,
+			&order.StartTime,
+			&finishTime,
+			&durationSeconds,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan order: %w", err)
+		}
+
+		order.Status = api.OrderStatus(status)
+		order.FinishTime = finishTime
+		order.DurationSeconds = durationSeconds
+		orders = append(orders, &order)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating orders: %w", err)
+	}
+
+	return orders, nil
+}
+
+func (r *OrderRepository) DeleteOrders(ctx context.Context, orderIDs []string) error {
+	if len(orderIDs) == 0 {
+		return nil
+	}
+
+	query := `DELETE FROM orders WHERE id = ANY($1)`
+	
+	result, err := r.db.Pool.Exec(ctx, query, orderIDs)
+	if err != nil {
+		return fmt.Errorf("failed to delete orders: %w", err)
+	}
+
+	rowsAffected := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("no orders deleted")
+	}
+
+	return nil
+}
+
 func getIntValue(ptr *int) int {
 	if ptr == nil {
 		return 0

@@ -17,9 +17,7 @@ func NewDB(databaseURL string) (*DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse database URL: %w", err)
 	}
-
-	// Увеличено для поддержки высокой нагрузки (18k+ RPS)
-	// При высокой нагрузке каждый запрос может требовать соединение к БД
+	
 	config.MaxConns = 200
 	config.MinConns = 20
 	config.MaxConnLifetime = time.Hour

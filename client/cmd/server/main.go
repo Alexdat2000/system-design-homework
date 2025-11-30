@@ -13,6 +13,7 @@ import (
 	"client/internal/external"
 	"client/internal/handler"
 	"client/internal/helpers"
+	"client/internal/jobs"
 	"client/internal/storage/postgres"
 	"client/internal/storage/redis"
 
@@ -42,10 +43,8 @@ func (s *Server) PostOrdersOrderIdFinish(w http.ResponseWriter, r *http.Request,
 }
 
 func main() {
-	// Load configuration
 	cfg := config.LoadConfig()
 
-	// Initialize PostgreSQL connection
 	db, err := postgres.NewDB(cfg.DatabaseURL)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
@@ -53,7 +52,6 @@ func main() {
 	defer db.Close()
 	log.Println("Connected to PostgreSQL database")
 
-	// Initialize Redis connection
 	redisClient, err := redis.NewClient(cfg.RedisURL)
 	if err != nil {
 		log.Fatalf("Failed to connect to Redis: %v", err)
@@ -65,26 +63,29 @@ func main() {
 	}()
 	log.Println("Connected to Redis")
 
-	// Initialize repositories
 	orderRepo := postgres.NewOrderRepository(db)
 	offerRepo := redis.NewOfferRepository(redisClient)
 
-	// Initialize external clients
 	extClient, err := external.NewExternalClient(cfg.ExternalServiceURL)
 	if err != nil {
 		log.Fatalf("Failed to create external client: %v", err)
 	}
 
-	// Initialize services
 	orderCache := redis.NewOrderCache(redisClient)
 	ordersService := orders.NewServiceWithCache(orderRepo, offerRepo, extClient, orderCache)
 	offersService := offers.NewService(offerRepo, extClient)
 
-	// Initialize handlers
 	ordersHandler := handler.NewOrdersHandler(ordersService)
 	offersHandler := handler.NewOffersHandler(offersService)
 
-	// Create server with handlers
+	cleanupJob := jobs.NewOrderCleanupJob(
+		orderRepo,
+		24*time.Hour,
+		1*time.Hour,
+	)
+	cleanupJob.Start()
+	defer cleanupJob.Stop()
+
 	server := &Server{
 		ordersHandler: ordersHandler,
 		offersHandler: offersHandler,
@@ -98,7 +99,6 @@ func main() {
 		helpers.RequestLoggerWithBody,
 	)
 
-	// Health check endpoint
 	router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
@@ -106,14 +106,13 @@ func main() {
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
 
-	// Настройка HTTP сервера для высокой нагрузки
 	srv := &http.Server{
 		Addr:         addr,
 		Handler:      api.HandlerFromMux(server, router),
-		ReadTimeout:  15 * time.Second,  // Максимальное время чтения запроса
-		WriteTimeout: 15 * time.Second,   // Максимальное время записи ответа
-		IdleTimeout:  120 * time.Second, // Максимальное время простоя соединения
-		MaxHeaderBytes: 1 << 20,         // 1MB максимальный размер заголовков
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  120 * time.Second,
+		MaxHeaderBytes: 1 << 20,
 	}
 
 	log.Printf("Client service starting on %s", addr)

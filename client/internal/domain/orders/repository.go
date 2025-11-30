@@ -23,4 +23,10 @@ type Repository interface {
 	// chargeTxID is an optional external transaction id for CLEAR (can be empty).
 	// chargeSuccess/unholdSuccess control statuses of inserted payment transactions.
 	FinishOrder(ctx context.Context, orderID string, finishTime time.Time, durationSeconds int, totalAmount int, finalStatus api.OrderStatus, chargeSuccess bool, unholdSuccess bool, chargeTxID string) error
+
+	// GetOldOrders retrieves orders older than the specified duration
+	GetOldOrders(ctx context.Context, olderThan time.Duration) ([]*api.Order, error)
+
+	// DeleteOrders deletes orders by their IDs (cascades to payment_transactions)
+	DeleteOrders(ctx context.Context, orderIDs []string) error
 }

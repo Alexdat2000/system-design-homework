@@ -43,6 +43,14 @@ func (m *mockFinishOrderRepository) FinishOrder(ctx context.Context, orderID str
 	return nil
 }
 
+func (m *mockFinishOrderRepository) GetOldOrders(ctx context.Context, olderThan time.Duration) ([]*api.Order, error) {
+	return nil, nil
+}
+
+func (m *mockFinishOrderRepository) DeleteOrders(ctx context.Context, orderIDs []string) error {
+	return nil
+}
+
 type mockPayments struct {
 	chargeErr error
 	unholdErr error
