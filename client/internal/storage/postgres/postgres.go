@@ -18,8 +18,10 @@ func NewDB(databaseURL string) (*DB, error) {
 		return nil, fmt.Errorf("failed to parse database URL: %w", err)
 	}
 
-	config.MaxConns = 25
-	config.MinConns = 5
+	// Увеличено для поддержки высокой нагрузки (18k+ RPS)
+	// При высокой нагрузке каждый запрос может требовать соединение к БД
+	config.MaxConns = 200
+	config.MinConns = 20
 	config.MaxConnLifetime = time.Hour
 	config.MaxConnIdleTime = time.Minute * 30
 	config.HealthCheckPeriod = time.Minute

@@ -1,0 +1,35 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: docker-logs
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: docker-logs
+          __path__: /var/lib/docker/containers/*/*-json.log
+    pipeline_stages:
+      # Parse Docker JSON log format
+      - json:
+          expressions:
+            log_line: log
+            stream: stream
+      # Drop logs that don't contain "request_complete"
+      - drop:
+          expression: '.*"event":"request_complete".*'
+          source: log_line
+          drop_counter_reason: "not_request_complete"
+          invert_match: true
+      # Output log line (don't extract labels to avoid too many streams)
+      - output:
+          source: log_line
+    relabel_configs:
+      # Don't extract container_id to reduce number of streams

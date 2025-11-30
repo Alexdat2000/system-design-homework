@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"client/api"
 	"client/internal/config"
@@ -105,8 +106,18 @@ func main() {
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
 
+	// Настройка HTTP сервера для высокой нагрузки
+	srv := &http.Server{
+		Addr:         addr,
+		Handler:      api.HandlerFromMux(server, router),
+		ReadTimeout:  15 * time.Second,  // Максимальное время чтения запроса
+		WriteTimeout: 15 * time.Second,   // Максимальное время записи ответа
+		IdleTimeout:  120 * time.Second, // Максимальное время простоя соединения
+		MaxHeaderBytes: 1 << 20,         // 1MB максимальный размер заголовков
+	}
+
 	log.Printf("Client service starting on %s", addr)
-	if err := http.ListenAndServe(addr, api.HandlerFromMux(server, router)); err != nil {
+	if err := srv.ListenAndServe(); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }

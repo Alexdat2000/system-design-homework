@@ -21,8 +21,17 @@ type ExternalClient struct {
 var _ PaymentsClientInterface = (*ExternalClient)(nil)
 
 func NewExternalClient(baseURL string) (*ExternalClient, error) {
+	// Настройка HTTP транспорта с connection pooling для высокой нагрузки
+	transport := &http.Transport{
+		MaxIdleConns:        200,              // Максимум idle соединений
+		MaxIdleConnsPerHost: 100,              // Максимум idle соединений на хост
+		MaxConnsPerHost:     200,              // Максимум соединений на хост
+		IdleConnTimeout:     90 * time.Second, // Таймаут для idle соединений
+		DisableKeepAlives:   false,            // Включить keep-alive для переиспользования соединений
+	}
 	httpClient := &http.Client{
-		Timeout: 5 * time.Second,
+		Timeout:   5 * time.Second,
+		Transport: transport,
 	}
 
 	apiClient, err := NewClientWithResponses(baseURL, WithHTTPClient(httpClient))

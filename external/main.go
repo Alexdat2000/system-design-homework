@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"external/api"
@@ -75,6 +76,9 @@ func NewServer() (*Server, error) {
 }
 
 func (s *Server) GetScooterData(w http.ResponseWriter, r *http.Request, params api.GetScooterDataParams) {
+	if (strings.HasPrefix(params.Id, "load-")) {
+		params.Id = "scooter-1"
+	}
 	scooter, ok := s.storage.GetScooter(params.Id)
 	if !ok {
 		w.WriteHeader(http.StatusNotFound)
@@ -86,6 +90,9 @@ func (s *Server) GetScooterData(w http.ResponseWriter, r *http.Request, params a
 }
 
 func (s *Server) GetTariffZoneData(w http.ResponseWriter, r *http.Request, params api.GetTariffZoneDataParams) {
+	if (strings.HasPrefix(params.Id, "load-")) {
+		params.Id = "zone-1"
+	}
 	zone, ok := s.storage.GetZone(params.Id)
 	if !ok {
 		w.WriteHeader(http.StatusNotFound)
@@ -97,6 +104,9 @@ func (s *Server) GetTariffZoneData(w http.ResponseWriter, r *http.Request, param
 }
 
 func (s *Server) GetUserProfile(w http.ResponseWriter, r *http.Request, params api.GetUserProfileParams) {
+	if (strings.HasPrefix(params.Id, "load-")) {
+		params.Id = "user-1"
+	}
 	user, ok := s.storage.GetUser(params.Id)
 	if !ok {
 		w.WriteHeader(http.StatusNotFound)

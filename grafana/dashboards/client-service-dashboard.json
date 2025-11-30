@@ -1,0 +1,186 @@
+{
+  "title": "Client Service Performance",
+  "tags": ["client-service", "performance"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 4,
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 5,
+      "title": "RPS - POST /offers",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({job=\"docker-logs\"} |~ \"request_complete\" |~ \"/offers\" [1m])) / 60",
+          "refId": "A",
+          "legendFormat": "POST /offers RPS"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "pointSize": 5
+          }
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "RPS - POST /orders",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({job=\"docker-logs\"} |~ \"request_complete\" |~ \"/orders\" |~ \"POST\" [1m])) / 60",
+          "refId": "A",
+          "legendFormat": "POST /orders RPS"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "pointSize": 5
+          }
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "RPS - GET /orders/{order_id}",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({job=\"docker-logs\"} |~ \"request_complete\" |~ \"/orders/\" |~ \"GET\" [1m])) / 60",
+          "refId": "A",
+          "legendFormat": "GET /orders/{order_id} RPS"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "pointSize": 5
+          }
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "RPS - POST /orders/{order_id}/finish",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({job=\"docker-logs\"} |~ \"request_complete\" |~ \"/orders/\" |~ \"finish\" |~ \"POST\" [1m])) / 60",
+          "refId": "A",
+          "legendFormat": "POST /orders/{order_id}/finish RPS"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "pointSize": 5
+          }
+        }
+      }
+    },
+    {
+      "id": 10,
+      "title": "All Endpoints - RPS",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({job=\"docker-logs\"} |~ \"request_complete\" [1m])) / 60",
+          "refId": "A",
+          "legendFormat": "Total RPS"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "pointSize": 5
+          }
+        }
+      }
+    }
+  ],
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "timepicker": {},
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  }
+}
