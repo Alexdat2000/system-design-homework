@@ -119,7 +119,7 @@ func (s *Service) CreateOffer(ctx context.Context, req *CreateOfferRequest) (*ap
 	})
 
 	now := time.Now()
-	expiresAt := now.Add(10 * time.Minute)
+	expiresAt := now.Add(5 * time.Minute)
 	offer := &api.Offer{
 		Id:             uuid.New().String(),
 		UserId:         req.UserID,

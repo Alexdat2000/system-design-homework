@@ -280,4 +280,4 @@ class TestOfferExpiration:
             created_at = datetime.fromisoformat(created_at_str)
             ttl = (expires_at - created_at).total_seconds()
             
-            assert abs(ttl - 600) <= 10, f"Offer TTL should be ~5 minutes, got {ttl} seconds"
+            assert abs(ttl - 300) <= 10, f"Offer TTL should be ~5 minutes, got {ttl} seconds"
