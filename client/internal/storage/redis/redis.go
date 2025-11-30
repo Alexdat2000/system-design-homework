@@ -17,8 +17,8 @@ func NewClient(redisURL string) (*Client, error) {
 		return nil, err
 	}
 	// Настройка пула соединений для высокой нагрузки
-	opts.PoolSize = 100              // Максимум соединений в пуле
-	opts.MinIdleConns = 20           // Минимум idle соединений
+	opts.PoolSize = 100    // Максимум соединений в пуле
+	opts.MinIdleConns = 20 // Минимум idle соединений
 	opts.PoolTimeout = 4 * time.Second
 	opts.ConnMaxIdleTime = 5 * time.Minute // Максимальное время простоя соединения
 	rdb := goredis.NewClient(opts)

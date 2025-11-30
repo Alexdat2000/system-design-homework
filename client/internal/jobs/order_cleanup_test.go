@@ -73,10 +73,10 @@ func createTestOrder(id, userID, scooterID, offerID string, status api.OrderStat
 
 func TestOrderCleanupJob_Cleanup_Success(t *testing.T) {
 	mockRepo := &mockCleanupRepository{}
-	
+
 	now := time.Now()
 	oldTime := now.Add(-2 * 24 * time.Hour)
-	
+
 	oldOrders := []*api.Order{
 		createTestOrder("order-1", "user-1", "scooter-1", "offer-1", api.FINISHED, oldTime),
 		createTestOrder("order-2", "user-2", "scooter-2", "offer-2", api.FINISHED, oldTime),
@@ -150,7 +150,7 @@ func TestOrderCleanupJob_Cleanup_GetOldOrdersError(t *testing.T) {
 	}
 
 	job := NewOrderCleanupJob(mockRepo, 24*time.Hour, 1*time.Hour)
-	
+
 	job.cleanup()
 
 	if !mockRepo.getOldOrdersCalled {
@@ -167,7 +167,7 @@ func TestOrderCleanupJob_Cleanup_DeleteOrdersError(t *testing.T) {
 
 	now := time.Now()
 	oldTime := now.Add(-2 * 24 * time.Hour)
-	
+
 	oldOrders := []*api.Order{
 		createTestOrder("order-1", "user-1", "scooter-1", "offer-1", api.FINISHED, oldTime),
 		createTestOrder("order-2", "user-2", "scooter-2", "offer-2", api.FINISHED, oldTime),
@@ -183,7 +183,7 @@ func TestOrderCleanupJob_Cleanup_DeleteOrdersError(t *testing.T) {
 	}
 
 	job := NewOrderCleanupJob(mockRepo, 24*time.Hour, 1*time.Hour)
-	
+
 	job.cleanup()
 
 	if !mockRepo.getOldOrdersCalled {
@@ -201,10 +201,10 @@ func TestOrderCleanupJob_Cleanup_DeleteOrdersError(t *testing.T) {
 
 func TestOrderCleanupJob_LogOrders(t *testing.T) {
 	mockRepo := &mockCleanupRepository{}
-	
+
 	now := time.Now()
 	oldTime := now.Add(-2 * 24 * time.Hour)
-	
+
 	orders := []*api.Order{
 		createTestOrder("order-1", "user-1", "scooter-1", "offer-1", api.FINISHED, oldTime),
 		createTestOrder("order-2", "user-2", "scooter-2", "offer-2", api.CANCELLED, oldTime),
@@ -230,7 +230,7 @@ func TestOrderCleanupJob_LogOrders(t *testing.T) {
 	}
 
 	job := NewOrderCleanupJob(mockRepo, 24*time.Hour, 1*time.Hour)
-	
+
 	job.cleanup()
 
 	if !mockRepo.getOldOrdersCalled {
@@ -277,4 +277,3 @@ func TestOrderCleanupJob_NewOrderCleanupJob(t *testing.T) {
 		t.Error("doneChan not initialized")
 	}
 }
-

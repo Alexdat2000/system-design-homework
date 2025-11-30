@@ -17,7 +17,7 @@ func NewDB(databaseURL string) (*DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse database URL: %w", err)
 	}
-	
+
 	config.MaxConns = 200
 	config.MinConns = 20
 	config.MaxConnLifetime = time.Hour

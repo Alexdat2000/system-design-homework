@@ -46,12 +46,12 @@ func (lrw *loggingResponseWriter) Write(b []byte) (int, error) {
 // extractBusinessMetrics extracts business metrics (user_id, order_id, offer_id) from request body
 func extractBusinessMetrics(body []byte) map[string]interface{} {
 	metrics := make(map[string]interface{})
-	
+
 	var data map[string]interface{}
 	if err := json.Unmarshal(body, &data); err != nil {
 		return metrics
 	}
-	
+
 	if userID, ok := data["user_id"].(string); ok && userID != "" {
 		metrics["user_id"] = userID
 	}
@@ -64,19 +64,19 @@ func extractBusinessMetrics(body []byte) map[string]interface{} {
 	if scooterID, ok := data["scooter_id"].(string); ok && scooterID != "" {
 		metrics["scooter_id"] = scooterID
 	}
-	
+
 	return metrics
 }
 
 // extractResponseMetrics extracts business metrics from response body
 func extractResponseMetrics(body []byte) map[string]interface{} {
 	metrics := make(map[string]interface{})
-	
+
 	var data map[string]interface{}
 	if err := json.Unmarshal(body, &data); err != nil {
 		return metrics
 	}
-	
+
 	if id, ok := data["id"].(string); ok && id != "" {
 		// Could be order_id or offer_id
 		if orderID, ok := data["order_id"].(string); ok && orderID != "" {
@@ -96,7 +96,7 @@ func extractResponseMetrics(body []byte) map[string]interface{} {
 	if status, ok := data["status"].(string); ok && status != "" {
 		metrics["order_status"] = status
 	}
-	
+
 	return metrics
 }
 
@@ -105,10 +105,10 @@ func extractResponseMetrics(body []byte) map[string]interface{} {
 func RequestLoggerWithBody(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		
+
 		// Extract request ID from chi middleware
 		requestID := middleware.GetReqID(r.Context())
-		
+
 		// Log request entry
 		logEvent := logger.Info().
 			Str("event", "request_start").
@@ -116,14 +116,14 @@ func RequestLoggerWithBody(next http.Handler) http.Handler {
 			Str("path", r.URL.Path).
 			Str("remote_addr", r.RemoteAddr).
 			Str("user_agent", r.UserAgent())
-		
+
 		if requestID != "" {
 			logEvent = logEvent.Str("request_id", requestID)
 		}
 		if r.URL.RawQuery != "" {
 			logEvent = logEvent.Str("query", r.URL.RawQuery)
 		}
-		
+
 		// Extract order_id from URL path if present (e.g., /orders/{order_id})
 		if r.URL.Path != "" {
 			// Try to extract order_id from path parameters
@@ -132,7 +132,7 @@ func RequestLoggerWithBody(next http.Handler) http.Handler {
 				logEvent = logEvent.Str("order_id", orderID)
 			}
 		}
-		
+
 		// Read request body for business metrics and logging (if present)
 		var requestMetrics map[string]interface{}
 		if r.Body != nil {
@@ -141,14 +141,14 @@ func RequestLoggerWithBody(next http.Handler) http.Handler {
 				requestMetrics = extractBusinessMetrics(bodyBytes)
 				// Restore body for handler
 				r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-				
+
 				// Add business metrics to log
 				for k, v := range requestMetrics {
 					if strVal, ok := v.(string); ok {
 						logEvent = logEvent.Str(k, strVal)
 					}
 				}
-				
+
 				// Log request body (truncated for large requests)
 				const maxRequestBody = 1000
 				requestBodyStr := string(bodyBytes)
@@ -160,22 +160,22 @@ func RequestLoggerWithBody(next http.Handler) http.Handler {
 				}
 			}
 		}
-		
+
 		logEvent.Msg("HTTP request started")
-		
+
 		// Wrap response writer
 		lrw := &loggingResponseWriter{ResponseWriter: w}
-		
+
 		// Execute handler
 		next.ServeHTTP(lrw, r)
-		
+
 		// Calculate duration
 		duration := time.Since(start)
 		durationMs := float64(duration.Nanoseconds()) / 1e6
-		
+
 		// Extract response metrics
 		responseMetrics := extractResponseMetrics(lrw.body.Bytes())
-		
+
 		// Build exit log event
 		logEvent = logger.Info().
 			Str("event", "request_complete").
@@ -185,31 +185,31 @@ func RequestLoggerWithBody(next http.Handler) http.Handler {
 			Float64("duration_ms", durationMs).
 			Dur("duration", duration).
 			Str("remote_addr", r.RemoteAddr)
-		
+
 		if requestID != "" {
 			logEvent = logEvent.Str("request_id", requestID)
 		}
-		
+
 		// Add business metrics from request
 		for k, v := range requestMetrics {
 			if strVal, ok := v.(string); ok {
 				logEvent = logEvent.Str(k, strVal)
 			}
 		}
-		
+
 		// Add business metrics from response
 		for k, v := range responseMetrics {
 			if strVal, ok := v.(string); ok {
 				logEvent = logEvent.Str(k, strVal)
 			}
 		}
-		
+
 		// Log errors for 4xx and 5xx
 		if lrw.statusCode >= 400 {
 			logEvent = logEvent.
 				Str("level", "error").
 				Int("error_code", lrw.statusCode)
-			
+
 			// Log error response body (truncated)
 			const maxErrorBody = 500
 			respBody := lrw.body.String()
@@ -220,7 +220,7 @@ func RequestLoggerWithBody(next http.Handler) http.Handler {
 				logEvent = logEvent.Str("error_response", respBody)
 			}
 		}
-		
+
 		// Log with appropriate level
 		if lrw.statusCode >= 500 {
 			logEvent.Msg("HTTP request failed")

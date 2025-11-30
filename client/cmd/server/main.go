@@ -107,11 +107,11 @@ func main() {
 	addr := fmt.Sprintf(":%s", cfg.Port)
 
 	srv := &http.Server{
-		Addr:         addr,
-		Handler:      api.HandlerFromMux(server, router),
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		Addr:           addr,
+		Handler:        api.HandlerFromMux(server, router),
+		ReadTimeout:    15 * time.Second,
+		WriteTimeout:   15 * time.Second,
+		IdleTimeout:    120 * time.Second,
 		MaxHeaderBytes: 1 << 20,
 	}
 

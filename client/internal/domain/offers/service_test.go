@@ -243,3 +243,173 @@ func TestCreateOffer_SetsIndex_IdempotencyKey(t *testing.T) {
 		t.Errorf("expected SetOfferByUserScooter to be called")
 	}
 }
+
+func TestCreateOffer_ZoneUnavailable_NoCache_ReturnsError(t *testing.T) {
+	repo := &mockRepo{}
+	ext := &mockExternal{
+		scooterFunc: func(ctx context.Context, scooterID string) (*external.ScooterData, error) {
+			return &external.ScooterData{Id: scooterID, ZoneId: "zone-new", Charge: 50}, nil
+		},
+		zoneFunc: func(ctx context.Context, zoneID string) (*external.TariffZone, error) {
+			return nil, errors.New("zone unavailable")
+		},
+		userFunc: func(ctx context.Context, userID string) (*external.UserProfile, error) {
+			return &external.UserProfile{Id: userID, HasSubscription: false, Trusted: false}, nil
+		},
+		cfgFunc: func(ctx context.Context) (*external.DynamicConfigs, error) {
+			return &external.DynamicConfigs{Surge: 1.0, LowChargeDiscount: 1.0, LowChargeThresholdPercent: 0}, nil
+		},
+	}
+	svc := NewService(repo, ext)
+
+	req := &CreateOfferRequest{UserID: "user-5", ScooterID: "scooter-5"}
+	_, err := svc.CreateOffer(context.Background(), req)
+	if err != ErrZoneUnavailable {
+		t.Fatalf("expected ErrZoneUnavailable, got %v", err)
+	}
+}
+
+func TestCreateOffer_ZoneUnavailable_ExpiredCache_ReturnsError(t *testing.T) {
+	repo := &mockRepo{}
+	ext := &mockExternal{
+		scooterFunc: func(ctx context.Context, scooterID string) (*external.ScooterData, error) {
+			return &external.ScooterData{Id: scooterID, ZoneId: "zone-expired", Charge: 50}, nil
+		},
+		zoneFunc: func(ctx context.Context, zoneID string) (*external.TariffZone, error) {
+			return nil, errors.New("zone unavailable")
+		},
+		userFunc: func(ctx context.Context, userID string) (*external.UserProfile, error) {
+			return &external.UserProfile{Id: userID, HasSubscription: false, Trusted: false}, nil
+		},
+		cfgFunc: func(ctx context.Context) (*external.DynamicConfigs, error) {
+			return &external.DynamicConfigs{Surge: 1.0, LowChargeDiscount: 1.0, LowChargeThresholdPercent: 0}, nil
+		},
+	}
+	svc := NewService(repo, ext)
+
+	svc.zoneCacheMu.Lock()
+	svc.zoneCache["zone-expired"] = zoneCacheEntry{
+		zone:      &external.TariffZone{Id: "zone-expired", PricePerMinute: 9, PriceUnlock: 1, DefaultDeposit: 2},
+		expiresAt: time.Now().Add(-1 * time.Minute), // Expired cache
+	}
+	svc.zoneCacheMu.Unlock()
+
+	req := &CreateOfferRequest{UserID: "user-6", ScooterID: "scooter-6"}
+	_, err := svc.CreateOffer(context.Background(), req)
+	if err != ErrZoneUnavailable {
+		t.Fatalf("expected ErrZoneUnavailable, got %v", err)
+	}
+}
+
+func TestCreateOffer_ConfigsUnavailable_UsesDefaults(t *testing.T) {
+	captured := &api.Offer{}
+	repo := &mockRepo{
+		saveOfferFunc: func(ctx context.Context, offer *api.Offer) error {
+			*captured = *offer
+			return nil
+		},
+		setOfferByUserScooterFunc: func(ctx context.Context, userID, scooterID, offerID string) error {
+			return nil
+		},
+	}
+	ext := &mockExternal{
+		scooterFunc: func(ctx context.Context, scooterID string) (*external.ScooterData, error) {
+			return &external.ScooterData{Id: scooterID, ZoneId: "zone-1", Charge: 80}, nil
+		},
+		zoneFunc: func(ctx context.Context, zoneID string) (*external.TariffZone, error) {
+			return &external.TariffZone{Id: zoneID, PricePerMinute: 10, PriceUnlock: 20, DefaultDeposit: 100}, nil
+		},
+		userFunc: func(ctx context.Context, userID string) (*external.UserProfile, error) {
+			return &external.UserProfile{Id: userID, HasSubscription: false, Trusted: false}, nil
+		},
+		cfgFunc: func(ctx context.Context) (*external.DynamicConfigs, error) {
+			return nil, errors.New("configs unavailable")
+		},
+	}
+	svc := NewService(repo, ext)
+
+	req := &CreateOfferRequest{UserID: "user-7", ScooterID: "scooter-7"}
+	offer, err := svc.CreateOffer(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	zone := &external.TariffZone{PricePerMinute: 10}
+	expectedPrice := int(float64(zone.PricePerMinute) * 1.2) // Default surge = 1.2
+	if offer.PricePerMinute != expectedPrice {
+		t.Errorf("expected price_per_minute %d with default surge=1.2, got %d", expectedPrice, offer.PricePerMinute)
+	}
+	if captured.PricePerMinute != expectedPrice {
+		t.Errorf("expected saved price_per_minute %d with default surge=1.2, got %d", expectedPrice, captured.PricePerMinute)
+	}
+}
+
+func TestCreateOffer_ConfigsUnavailable_PreservesOldValues(t *testing.T) {
+	captured1 := &api.Offer{}
+	captured2 := &api.Offer{}
+	repo := &mockRepo{
+		saveOfferFunc: func(ctx context.Context, offer *api.Offer) error {
+			if captured1.PricePerMinute == 0 {
+				*captured1 = *offer
+			} else {
+				*captured2 = *offer
+			}
+			return nil
+		},
+		setOfferByUserScooterFunc: func(ctx context.Context, userID, scooterID, offerID string) error {
+			return nil
+		},
+	}
+
+	serviceConfigs := &external.DynamicConfigs{
+		Surge:                          1.5,
+		LowChargeDiscount:              0.8,
+		LowChargeThresholdPercent:      25,
+		IncompleteRideThresholdSeconds: 10,
+	}
+
+	ext := &mockExternal{
+		scooterFunc: func(ctx context.Context, scooterID string) (*external.ScooterData, error) {
+			return &external.ScooterData{Id: scooterID, ZoneId: "zone-1", Charge: 80}, nil
+		},
+		zoneFunc: func(ctx context.Context, zoneID string) (*external.TariffZone, error) {
+			return &external.TariffZone{Id: zoneID, PricePerMinute: 10, PriceUnlock: 20, DefaultDeposit: 100}, nil
+		},
+		userFunc: func(ctx context.Context, userID string) (*external.UserProfile, error) {
+			return &external.UserProfile{Id: userID, HasSubscription: false, Trusted: false}, nil
+		},
+		cfgFunc: func(ctx context.Context) (*external.DynamicConfigs, error) {
+			return serviceConfigs, nil
+		},
+	}
+	svc := NewService(repo, ext)
+
+	req1 := &CreateOfferRequest{UserID: "user-8", ScooterID: "scooter-8"}
+	offer1, err := svc.CreateOffer(context.Background(), req1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	zone := &external.TariffZone{PricePerMinute: 10}
+	expectedPrice1 := int(float64(zone.PricePerMinute) * serviceConfigs.Surge)
+	if offer1.PricePerMinute != expectedPrice1 {
+		t.Errorf("expected price_per_minute %d with service configs surge=%.1f, got %d", expectedPrice1, serviceConfigs.Surge, offer1.PricePerMinute)
+	}
+
+	ext.cfgFunc = func(ctx context.Context) (*external.DynamicConfigs, error) {
+		return nil, errors.New("configs unavailable")
+	}
+
+	req2 := &CreateOfferRequest{UserID: "user-9", ScooterID: "scooter-9"}
+	offer2, err := svc.CreateOffer(context.Background(), req2)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if offer2.PricePerMinute != offer1.PricePerMinute {
+		t.Errorf("expected cached configs to be used (price=%d), got %d. If this equals default (surge=1.2), then defaults were used instead of cached values", offer1.PricePerMinute, offer2.PricePerMinute)
+	}
+	if captured2.PricePerMinute != offer1.PricePerMinute {
+		t.Errorf("expected saved price_per_minute %d with cached configs, got %d", offer1.PricePerMinute, captured2.PricePerMinute)
+	}
+}

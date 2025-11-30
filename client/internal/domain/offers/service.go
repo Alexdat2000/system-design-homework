@@ -197,7 +197,7 @@ func (s *Service) getConfigsCached(ctx context.Context) *external.DynamicConfigs
 	cfg := s.configs
 	isDefault := cfg != nil && cfg.IncompleteRideThresholdSeconds == 5
 	s.configsMu.RUnlock()
-	
+
 	// If still using default configs, try to update synchronously (for tests and first use)
 	if isDefault {
 		cfg, err := s.ext.GetConfigs(ctx)
@@ -208,7 +208,7 @@ func (s *Service) getConfigsCached(ctx context.Context) *external.DynamicConfigs
 			return cfg
 		}
 	}
-	
+
 	return cfg
 }
 

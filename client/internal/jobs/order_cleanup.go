@@ -22,11 +22,11 @@ func init() {
 }
 
 type OrderCleanupJob struct {
-	repo         orders.Repository
-	olderThan    time.Duration
-	interval     time.Duration
-	stopChan     chan struct{}
-	doneChan     chan struct{}
+	repo      orders.Repository
+	olderThan time.Duration
+	interval  time.Duration
+	stopChan  chan struct{}
+	doneChan  chan struct{}
 }
 
 func NewOrderCleanupJob(repo orders.Repository, olderThan time.Duration, interval time.Duration) *OrderCleanupJob {
@@ -72,7 +72,7 @@ func (j *OrderCleanupJob) cleanup() {
 	defer cancel()
 
 	startTime := time.Now()
-	
+
 	cleanupLogger.Info().
 		Str("event", "cleanup_started").
 		Dur("older_than", j.olderThan).
@@ -141,4 +141,3 @@ func (j *OrderCleanupJob) logOrders(orders []*api.Order) {
 			Msg("Deleting old order")
 	}
 }
-

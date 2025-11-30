@@ -248,7 +248,7 @@ func (r *OrderRepository) FinishOrder(ctx context.Context, orderID string, finis
 
 func (r *OrderRepository) GetOldOrders(ctx context.Context, olderThan time.Duration) ([]*api.Order, error) {
 	cutoffTime := time.Now().Add(-olderThan)
-	
+
 	query := `
 		SELECT 
 			id, user_id, scooter_id, offer_id,
@@ -309,7 +309,7 @@ func (r *OrderRepository) DeleteOrders(ctx context.Context, orderIDs []string) e
 	}
 
 	query := `DELETE FROM orders WHERE id = ANY($1)`
-	
+
 	result, err := r.db.Pool.Exec(ctx, query, orderIDs)
 	if err != nil {
 		return fmt.Errorf("failed to delete orders: %w", err)
