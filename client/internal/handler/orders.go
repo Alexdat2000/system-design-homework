@@ -78,23 +78,31 @@ func (h *OrdersHandler) PostOrders(w http.ResponseWriter, r *http.Request) {
 
 func (h *OrdersHandler) GetOrdersOrderId(w http.ResponseWriter, r *http.Request, orderId string) {
 	if orderId == "" {
-		http.Error(w, "order_id is required", http.StatusBadRequest)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "order_id is required"})
 		return
 	}
 
 	order, err := h.ordersService.GetOrder(r.Context(), orderId)
 	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Internal server error"})
 		return
 	}
 	if order == nil {
-		http.Error(w, "Order not found", http.StatusNotFound)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Order not found"})
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(order); err != nil {
-		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to encode response"})
 		return
 	}
 }
