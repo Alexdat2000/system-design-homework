@@ -308,9 +308,15 @@ func (r *OrderRepository) DeleteOrders(ctx context.Context, orderIDs []string) e
 		return nil
 	}
 
+	tx, err := r.db.Pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
 	query := `DELETE FROM orders WHERE id = ANY($1)`
 
-	result, err := r.db.Pool.Exec(ctx, query, orderIDs)
+	result, err := tx.Exec(ctx, query, orderIDs)
 	if err != nil {
 		return fmt.Errorf("failed to delete orders: %w", err)
 	}
@@ -318,6 +324,10 @@ func (r *OrderRepository) DeleteOrders(ctx context.Context, orderIDs []string) e
 	rowsAffected := result.RowsAffected()
 	if rowsAffected == 0 {
 		return fmt.Errorf("no orders deleted")
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	return nil
