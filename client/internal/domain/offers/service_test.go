@@ -150,10 +150,12 @@ func TestCreateOffer_ZoneFallbackFromCache(t *testing.T) {
 	}
 	svc := NewService(repo, ext)
 
+	svc.zoneCacheMu.Lock()
 	svc.zoneCache["zone-777"] = zoneCacheEntry{
 		zone:      &external.TariffZone{Id: "zone-777", PricePerMinute: 9, PriceUnlock: 1, DefaultDeposit: 2},
 		expiresAt: time.Now().Add(9 * time.Minute),
 	}
+	svc.zoneCacheMu.Unlock()
 
 	req := &CreateOfferRequest{UserID: "user-2", ScooterID: "scooter-X"}
 	offer, err := svc.CreateOffer(context.Background(), req)
