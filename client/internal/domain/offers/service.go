@@ -35,14 +35,12 @@ type Service struct {
 	repo Repository
 	ext  External
 
-	// in-memory caches
 	zoneCache    map[string]zoneCacheEntry
-	zoneCacheMu  sync.RWMutex // protects zoneCache
+	zoneCacheMu  sync.RWMutex
 	zoneCacheTTL time.Duration
 
-	// configs cache with periodic updates
 	configs     *external.DynamicConfigs
-	configsMu   sync.RWMutex // protects configs
+	configsMu   sync.RWMutex
 	stopCleanup chan struct{}
 	cleanupDone sync.WaitGroup
 }
@@ -60,9 +58,7 @@ func NewService(repo Repository, ext External) *Service {
 		zoneCacheTTL: 10 * time.Minute,
 		stopCleanup:  make(chan struct{}),
 	}
-	// Initialize configs with default values
 	s.configs = s.getDefaultConfigs()
-	// Start periodic config updates
 	s.cleanupDone.Add(1)
 	go s.periodicConfigUpdate()
 	return s
@@ -73,7 +69,6 @@ type CreateOfferRequest struct {
 	ScooterID string
 }
 
-// CreateOffer performs idempotent creation or returns existing valid offer
 func (s *Service) CreateOffer(ctx context.Context, req *CreateOfferRequest) (*api.Offer, error) {
 	if req == nil || req.UserID == "" || req.ScooterID == "" {
 		return nil, fmt.Errorf("invalid request")
@@ -143,7 +138,6 @@ func (s *Service) CreateOffer(ctx context.Context, req *CreateOfferRequest) (*ap
 }
 
 func (s *Service) getZoneWithCache(ctx context.Context, zoneID string) (*external.TariffZone, error) {
-	// Try to read from cache with read lock
 	s.zoneCacheMu.RLock()
 	entry, ok := s.zoneCache[zoneID]
 	now := time.Now()
@@ -154,10 +148,8 @@ func (s *Service) getZoneWithCache(ctx context.Context, zoneID string) (*externa
 		return entry.zone, nil
 	}
 
-	// Cache miss or expired, fetch from external service
 	z, err := s.ext.GetTariffZoneData(ctx, zoneID)
 	if err != nil || z == nil {
-		// External service failed, try cache again with read lock
 		s.zoneCacheMu.RLock()
 		entry, ok := s.zoneCache[zoneID]
 		fallbackCached := ok && now.Before(entry.expiresAt)
@@ -169,7 +161,6 @@ func (s *Service) getZoneWithCache(ctx context.Context, zoneID string) (*externa
 		return nil, ErrZoneUnavailable
 	}
 
-	// Update cache with write lock
 	s.zoneCacheMu.Lock()
 	s.zoneCache[zoneID] = zoneCacheEntry{
 		zone:      z,
@@ -180,7 +171,6 @@ func (s *Service) getZoneWithCache(ctx context.Context, zoneID string) (*externa
 	return z, nil
 }
 
-// getDefaultConfigs returns default configuration values
 func (s *Service) getDefaultConfigs() *external.DynamicConfigs {
 	return &external.DynamicConfigs{
 		Surge:                          1.2,
@@ -190,15 +180,12 @@ func (s *Service) getDefaultConfigs() *external.DynamicConfigs {
 	}
 }
 
-// getConfigsCached returns current configs (thread-safe read)
-// On first call, attempts to fetch configs from external service synchronously if still using defaults
 func (s *Service) getConfigsCached(ctx context.Context) *external.DynamicConfigs {
 	s.configsMu.RLock()
 	cfg := s.configs
 	isDefault := cfg != nil && cfg.IncompleteRideThresholdSeconds == 5
 	s.configsMu.RUnlock()
 
-	// If still using default configs, try to update synchronously (for tests and first use)
 	if isDefault {
 		cfg, err := s.ext.GetConfigs(ctx)
 		if err == nil && cfg != nil {
@@ -212,32 +199,25 @@ func (s *Service) getConfigsCached(ctx context.Context) *external.DynamicConfigs
 	return cfg
 }
 
-// updateConfigs attempts to fetch and update configs from external service.
-// If the service is unavailable, old values are preserved.
 func (s *Service) updateConfigs() {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	cfg, err := s.ext.GetConfigs(ctx)
 	if err != nil || cfg == nil {
-		// Service unavailable, keep old values
 		return
 	}
 
-	// Update configs with write lock
 	s.configsMu.Lock()
 	s.configs = cfg
 	s.configsMu.Unlock()
 }
 
-// periodicConfigUpdate runs periodic updates of configs from external service.
-// Updates every 5 seconds. If service is unavailable, old values are preserved.
 func (s *Service) periodicConfigUpdate() {
 	defer s.cleanupDone.Done()
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
-	// Initial update attempt
 	s.updateConfigs()
 
 	for {
@@ -250,8 +230,6 @@ func (s *Service) periodicConfigUpdate() {
 	}
 }
 
-// Stop stops the periodic config update goroutine.
-// Should be called when the service is being shut down.
 func (s *Service) Stop() {
 	close(s.stopCleanup)
 	s.cleanupDone.Wait()
