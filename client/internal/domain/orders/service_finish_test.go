@@ -9,8 +9,6 @@ import (
 	"time"
 )
 
-// ---- Mocks ----
-
 type mockFinishOrderRepository struct {
 	getOrderByIDFunc    func(ctx context.Context, orderID string) (*api.Order, error)
 	createOrderFunc     func(ctx context.Context, order *api.Order, transactionID string) error
@@ -106,10 +104,7 @@ func (c *recordCache) Invalidate(ctx context.Context, orderID string) error {
 	return nil
 }
 
-// ---- Helpers ----
 func iptr(i int) *int { return &i }
-
-// ---- Tests ----
 
 func TestFinishOrder_Success_ChargeAndUnhold_OK(t *testing.T) {
 	now := time.Now()

@@ -75,8 +75,6 @@ func (m *mockExternal) GetConfigs(ctx context.Context) (*external.DynamicConfigs
 	}, nil
 }
 
-// --- Tests ---
-
 func TestCreateOffer_Idempotent_ReturnsExisting(t *testing.T) {
 	repo := &mockRepo{
 		getOfferByUserScooterFunc: func(ctx context.Context, userID, scooterID string) (*api.Offer, error) {
