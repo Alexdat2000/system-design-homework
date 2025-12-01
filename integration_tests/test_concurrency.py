@@ -41,7 +41,6 @@ class TestConcurrentOfferCreation:
                 return response.json()["id"]
             return None
         
-        # Execute 5 concurrent requests
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
             futures = [executor.submit(create_offer) for _ in range(5)]
             for future in concurrent.futures.as_completed(futures):
@@ -49,15 +48,12 @@ class TestConcurrentOfferCreation:
                 if result:
                     offer_ids.append(result)
         
-        # All requests should succeed
         assert len(offer_ids) >= 1, "At least one offer should be created"
         
-        # After concurrent requests, subsequent requests should return cached offer
         subsequent_response = client_service.create_offer(user_id, scooter_id)
         assert subsequent_response.status_code == 201
         cached_offer_id = subsequent_response.json()["id"]
         
-        # The cached offer should match one of the created offers
         assert cached_offer_id in offer_ids, \
             "Subsequent request should return one of the created offers"
     
@@ -77,7 +73,6 @@ class TestConcurrentOfferCreation:
                 user_id, status, offer = future.result()
                 results[user_id] = (status, offer)
         
-        # All should succeed
         for user_id, (status, offer) in results.items():
             assert status == 201, f"User {user_id} failed to create offer"
             assert offer["user_id"] == user_id
@@ -93,7 +88,6 @@ class TestConcurrentOrderCreation:
         """
         user_id = unique_user()
         
-        # Create offer
         offer_response = client_service.create_offer(user_id, "scooter-1")
         assert offer_response.status_code == 201
         offer = offer_response.json()
@@ -115,7 +109,6 @@ class TestConcurrentOrderCreation:
                 elif status == 400:
                     fail_count += 1
         
-        # Only one should succeed (offer can only be used once)
         assert success_count == 1, \
             f"Expected exactly 1 success, got {success_count}"
         assert fail_count == 4, \
@@ -147,7 +140,6 @@ class TestConcurrentOrderCreation:
                 if result:
                     orders.append(result)
         
-        # All should return same order (idempotency by order_id)
         assert len(orders) > 0
         order_ids = [o["id"] for o in orders]
         assert len(set(order_ids)) == 1, \
@@ -166,7 +158,6 @@ class TestConcurrentOrderFinishing:
         """
         user_id = unique_user()
         
-        # Create and start order
         offer_response = client_service.create_offer(user_id, "scooter-1")
         offer = offer_response.json()
         
@@ -184,12 +175,10 @@ class TestConcurrentOrderFinishing:
             for future in concurrent.futures.as_completed(futures):
                 results.append(future.result())
         
-        # At least one should succeed with 200
         success_count = sum(1 for r in results if r == 200)
         assert success_count >= 1, \
             f"Expected at least 1 success (200), got responses: {results}"
         
-        # Verify final order state is FINISHED
         order = client_service.get_order(order_id).json()
         assert order["status"] == "FINISHED"
 
@@ -203,22 +192,18 @@ class TestMultipleRidesConcurrency:
         
         def complete_ride(user_id: str, scooter_id: str):
             try:
-                # Create offer
                 offer_response = client_service.create_offer(user_id, scooter_id)
                 if offer_response.status_code != 201:
                     return {"user": user_id, "success": False, "stage": "offer"}
                 offer = offer_response.json()
                 
-                # Create order
                 order_id = str(uuid.uuid4())
                 order_response = client_service.create_order(order_id, offer["id"], user_id)
                 if order_response.status_code != 201:
                     return {"user": user_id, "success": False, "stage": "order"}
                 
-                # Small wait
                 time.sleep(0.1)
                 
-                # Finish order
                 finish_response = client_service.finish_order(order_id)
                 if finish_response.status_code != 200:
                     return {"user": user_id, "success": False, "stage": "finish"}
@@ -232,7 +217,6 @@ class TestMultipleRidesConcurrency:
             except Exception as e:
                 return {"user": user_id, "success": False, "error": str(e)}
         
-        # Each user rides different scooter
         ride_params = [
             (unique_user(), "scooter-1"),
             (unique_user(), "scooter-2"),
@@ -248,7 +232,6 @@ class TestMultipleRidesConcurrency:
             for future in concurrent.futures.as_completed(futures):
                 results.append(future.result())
         
-        # All rides should complete successfully
         for result in results:
             assert result["success"], \
                 f"User {result['user']} failed at stage {result.get('stage', 'unknown')}: {result.get('error', '')}"
@@ -269,7 +252,6 @@ class TestRapidOperations:
             assert response.status_code == 201
             offers.append(response.json())
         
-        # All offers should be different
         offer_ids = [o["id"] for o in offers]
         assert len(set(offer_ids)) == len(scooters), \
             "Each scooter should have its own offer"
@@ -278,24 +260,20 @@ class TestRapidOperations:
         """Test rapid GET requests for order status."""
         user_id = unique_user()
         
-        # Create order
         offer_response = client_service.create_offer(user_id, "scooter-1")
         offer = offer_response.json()
         
         order_id = str(uuid.uuid4())
         client_service.create_order(order_id, offer["id"], user_id)
         
-        # Rapid GET requests
         success_count = 0
         for _ in range(20):
             response = client_service.get_order(order_id)
             if response.status_code == 200:
                 success_count += 1
         
-        # All should succeed
         assert success_count == 20
         
-        # Cleanup
         client_service.finish_order(order_id)
     
     def test_back_to_back_rides(self, client_service):
@@ -304,20 +282,16 @@ class TestRapidOperations:
         completed_rides = []
         
         for i in range(3):
-            # Need different scooters for each ride since offers are cached
             scooter_id = f"scooter-{i + 1}"
             
-            # New offer
             offer_response = client_service.create_offer(user_id, scooter_id)
             assert offer_response.status_code == 201
             offer = offer_response.json()
             
-            # Create order
             order_id = str(uuid.uuid4())
             order_response = client_service.create_order(order_id, offer["id"], user_id)
             assert order_response.status_code == 201
             
-            # Finish
             finish_response = client_service.finish_order(order_id)
             assert finish_response.status_code == 200
             
@@ -327,7 +301,6 @@ class TestRapidOperations:
                 "offer_id": offer["id"]
             })
         
-        # Verify all rides completed with unique order/offer IDs
         order_ids = [r["order_id"] for r in completed_rides]
         offer_ids = [r["offer_id"] for r in completed_rides]
         

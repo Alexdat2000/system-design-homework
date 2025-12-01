@@ -27,12 +27,10 @@ class TestOrderCreation:
         """Test successful order creation from a valid offer."""
         user_id = unique_user()
         
-        # First create an offer
         offer_response = client_service.create_offer(user_id, "scooter-1")
         assert offer_response.status_code == 201
         offer = offer_response.json()
         
-        # Create order from offer
         order_id = str(uuid.uuid4())
         order_response = client_service.create_order(order_id, offer["id"], user_id)
         
@@ -41,7 +39,6 @@ class TestOrderCreation:
         
         order = order_response.json()
         
-        # Verify required fields from OpenAPI spec
         assert order["id"] == order_id
         assert order["user_id"] == user_id
         assert order["scooter_id"] == offer["scooter_id"]
@@ -63,7 +60,6 @@ class TestOrderCreation:
         assert order_response.status_code == 201
         order = order_response.json()
         
-        # Order should have same pricing as offer
         assert order["price_per_minute"] == offer["price_per_minute"]
         assert order["price_unlock"] == offer["price_unlock"]
         assert order["deposit"] == offer["deposit"]
@@ -71,8 +67,6 @@ class TestOrderCreation:
     def test_create_order_idempotency_same_order_id(self, client_service):
         """
         Test idempotency: same order_id returns existing order.
-        ADR: проверка по order_id - если заказ уже существует с тем же order_id,
-        возвращается существующий заказ
         """
         user_id = unique_user()
         
@@ -82,20 +76,15 @@ class TestOrderCreation:
         
         order_id = str(uuid.uuid4())
         
-        # First request
         response1 = client_service.create_order(order_id, offer["id"], user_id)
         assert response1.status_code == 201
         order1 = response1.json()
         
-        # Second request with same order_id (idempotent)
         response2 = client_service.create_order(order_id, offer["id"], user_id)
         assert response2.status_code == 201
         order2 = response2.json()
         
-        # Should return same order
         assert order1["id"] == order2["id"]
-        # Note: start_time may have different precision in responses,
-        # so we compare the date portion only (first 19 chars: "2025-01-01T12:00:00")
         assert order1["start_time"][:19] == order2["start_time"][:19]
     
     def test_create_order_offer_not_found(self, client_service):
@@ -110,17 +99,14 @@ class TestOrderCreation:
         """Test error when offer was already used for another order."""
         user_id = unique_user()
         
-        # Create offer
         offer_response = client_service.create_offer(user_id, "scooter-1")
         assert offer_response.status_code == 201
         offer = offer_response.json()
         
-        # First order
         order_id1 = str(uuid.uuid4())
         response1 = client_service.create_order(order_id1, offer["id"], user_id)
         assert response1.status_code == 201
         
-        # Second order with same offer but different order_id
         order_id2 = str(uuid.uuid4())
         response2 = client_service.create_order(order_id2, offer["id"], user_id)
         
@@ -132,12 +118,10 @@ class TestOrderCreation:
         user1 = unique_user()
         user2 = unique_user()
         
-        # Create offer for user1
         offer_response = client_service.create_offer(user1, "scooter-1")
         assert offer_response.status_code == 201
         offer = offer_response.json()
         
-        # Try to create order with different user
         order_id = str(uuid.uuid4())
         response = client_service.create_order(order_id, offer["id"], user2)
         
@@ -184,7 +168,6 @@ class TestOrderCreation:
     
     def test_create_order_initial_amount_includes_unlock(self, client_service, test_zones):
         """Test that initial current_amount equals unlock price."""
-        # Use unique user for fresh offer
         user_id = unique_user()
         
         offer_response = client_service.create_offer(user_id, "scooter-3")
@@ -197,8 +180,6 @@ class TestOrderCreation:
         assert order_response.status_code == 201
         order = order_response.json()
         
-        # Initial amount should include unlock price
-        # Unknown users get charged unlock price (not 0)
         assert order["current_amount"] == offer["price_unlock"]
 
 
@@ -209,14 +190,12 @@ class TestOrderRetrieval:
         """Test successful order retrieval."""
         user_id = unique_user()
         
-        # Create offer and order
         offer_response = client_service.create_offer(user_id, "scooter-1")
         offer = offer_response.json()
         
         order_id = str(uuid.uuid4())
         client_service.create_order(order_id, offer["id"], user_id)
         
-        # Get order
         response = client_service.get_order(order_id)
         
         assert response.status_code == 200
@@ -244,7 +223,6 @@ class TestOrderRetrieval:
         response = client_service.get_order(order_id)
         order = response.json()
         
-        # Verify pricing fields are present
         assert "price_per_minute" in order
         assert "price_unlock" in order
         assert "deposit" in order
@@ -260,7 +238,6 @@ class TestOrderRetrieval:
         order_id = str(uuid.uuid4())
         client_service.create_order(order_id, offer["id"], user_id)
         
-        # Multiple GETs should return consistent data
         response1 = client_service.get_order(order_id)
         response2 = client_service.get_order(order_id)
         
@@ -274,17 +251,14 @@ class TestOrderFinishing:
         """Test successful order finishing."""
         user_id = unique_user()
         
-        # Create offer and order
         offer_response = client_service.create_offer(user_id, "scooter-1")
         offer = offer_response.json()
         
         order_id = str(uuid.uuid4())
         client_service.create_order(order_id, offer["id"], user_id)
         
-        # Wait a bit to accumulate some ride time
         time.sleep(1)
         
-        # Finish order
         response = client_service.finish_order(order_id)
         
         assert response.status_code == 200
@@ -309,15 +283,13 @@ class TestOrderFinishing:
         order_id = str(uuid.uuid4())
         client_service.create_order(order_id, offer["id"], user_id)
         
-        # Wait for some time to ensure ride duration exceeds incomplete_ride_threshold (5 seconds)
-        time.sleep(6)  # 6 seconds > 5 seconds threshold, so payment will be charged
+        time.sleep(6)
         
         response = client_service.finish_order(order_id)
         order = response.json()
         
-        # Calculate expected total
         duration_seconds = order["duration_seconds"]
-        minutes = -(-duration_seconds // 60)  # ceiling division
+        minutes = -(-duration_seconds // 60)
         expected_total = offer["price_unlock"] + (minutes * offer["price_per_minute"])
         
         assert order["current_amount"] == expected_total, \
@@ -326,7 +298,6 @@ class TestOrderFinishing:
     def test_finish_order_idempotency(self, client_service):
         """
         Test that finishing already finished order returns 409.
-        ADR: idempotent finish
         """
         user_id = unique_user()
         
@@ -336,11 +307,9 @@ class TestOrderFinishing:
         order_id = str(uuid.uuid4())
         client_service.create_order(order_id, offer["id"], user_id)
         
-        # First finish
         response1 = client_service.finish_order(order_id)
         assert response1.status_code == 200
         
-        # Second finish (idempotent)
         response2 = client_service.finish_order(order_id)
         assert response2.status_code == 409
         assert "already finished" in response2.text.lower()
@@ -361,14 +330,11 @@ class TestOrderFinishing:
         order_id = str(uuid.uuid4())
         client_service.create_order(order_id, offer["id"], user_id)
         
-        # Verify initial status
         get_response1 = client_service.get_order(order_id)
         assert get_response1.json()["status"] == "ACTIVE"
         
-        # Finish order
         client_service.finish_order(order_id)
         
-        # Verify status is updated in cache/DB
         get_response2 = client_service.get_order(order_id)
         assert get_response2.json()["status"] == "FINISHED"
 
@@ -387,35 +353,29 @@ class TestOrderLifecycle:
         """
         user_id = unique_user()
         
-        # Step 1: Create offer
         offer_response = client_service.create_offer(user_id, "scooter-1")
         assert offer_response.status_code == 201
         offer = offer_response.json()
         
-        # Step 2: Create order
         order_id = str(uuid.uuid4())
         order_response = client_service.create_order(order_id, offer["id"], user_id)
         assert order_response.status_code == 201
         order = order_response.json()
         assert order["status"] == "ACTIVE"
         
-        # Step 3: Get order during ride
         time.sleep(1)
         get_response = client_service.get_order(order_id)
         assert get_response.status_code == 200
         active_order = get_response.json()
         assert active_order["status"] == "ACTIVE"
         
-        # Wait to ensure ride duration exceeds incomplete_ride_threshold (5 seconds)
-        time.sleep(6)  # Total duration will be >= 7 seconds
+        time.sleep(6)
         
-        # Step 4: Finish order
         finish_response = client_service.finish_order(order_id)
         assert finish_response.status_code == 200
         finished_order = finish_response.json()
         assert finished_order["status"] == "FINISHED"
         
-        # Step 5: Verify final state
         final_response = client_service.get_order(order_id)
         assert final_response.status_code == 200
         final_order = final_response.json()
@@ -429,7 +389,6 @@ class TestOrderLifecycle:
         """Test that multiple users can have concurrent active orders."""
         orders = []
         
-        # Create orders for different unique users
         scooters = ["scooter-1", "scooter-2", "scooter-3"]
         for scooter_id in scooters:
             user_id = unique_user()
@@ -443,12 +402,10 @@ class TestOrderLifecycle:
             assert order_response.status_code == 201
             orders.append(order_response.json())
         
-        # Verify all orders are active
         for order in orders:
             get_response = client_service.get_order(order["id"])
             assert get_response.json()["status"] == "ACTIVE"
         
-        # Finish all orders
         for order in orders:
             finish_response = client_service.finish_order(order["id"])
             assert finish_response.status_code == 200
@@ -461,15 +418,12 @@ class TestOrderLifecycle:
         offer_response = client_service.create_offer(user_id, "scooter-1")
         offer = offer_response.json()
         
-        # First order succeeds
         order1_id = str(uuid.uuid4())
         response1 = client_service.create_order(order1_id, offer["id"], user_id)
         assert response1.status_code == 201
         
-        # Finish first order
         client_service.finish_order(order1_id)
         
-        # Try to create second order with same offer - should fail
         order2_id = str(uuid.uuid4())
         response2 = client_service.create_order(order2_id, offer["id"], user_id)
         assert response2.status_code == 400
@@ -479,7 +433,6 @@ class TestOrderLifecycle:
         user_id = unique_user()
         scooter_id = "scooter-1"
         
-        # First ride
         offer1_response = client_service.create_offer(user_id, scooter_id)
         offer1 = offer1_response.json()
         
@@ -487,16 +440,12 @@ class TestOrderLifecycle:
         client_service.create_order(order1_id, offer1["id"], user_id)
         client_service.finish_order(order1_id)
         
-        # Second ride - new offer should be created (old one was used)
-        # Wait a bit to ensure the system processes the finish
         time.sleep(1)
         
-        # Create offer with a different scooter to avoid cache
         offer2_response = client_service.create_offer(user_id, "scooter-2")
         assert offer2_response.status_code == 201
         offer2 = offer2_response.json()
         
-        # Can create new order
         order2_id = str(uuid.uuid4())
         order2_response = client_service.create_order(order2_id, offer2["id"], user_id)
         assert order2_response.status_code == 201

@@ -9,13 +9,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 
 
-# ----------------- CONFIG -----------------
-
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 CLIENT_SERVICE_URL = os.environ.get("CLIENT_SERVICE_URL", "http://localhost:8080")
-
-
-# ----------------- HTTP CLIENTS -----------------
 
 
 class ServiceClient:
@@ -23,17 +18,15 @@ class ServiceClient:
 
     def __init__(self, base_url: str):
         self.base_url = base_url.rstrip("/")
-        # Настройка сессии для переиспользования соединений и высокой нагрузки
         adapter = requests.adapters.HTTPAdapter(
-            pool_connections=100,      # Количество пулов соединений
-            pool_maxsize=200,           # Максимум соединений в пуле
-            max_retries=0,              # Без автоматических повторов
-            pool_block=False,           # Не блокировать при исчерпании пула
+            pool_connections=100,   
+            pool_maxsize=200,           
+            max_retries=0,              
+            pool_block=False,           
         )
         self.session = requests.Session()
         self.session.mount('http://', adapter)
         self.session.mount('https://', adapter)
-        # Таймауты для запросов
         self.timeout = 10
 
     def health_check(self) -> bool:
@@ -88,27 +81,11 @@ class ClientServiceClient(ServiceClient):
         return self.post(f"/orders/{order_id}/finish")
 
 
-# ----------------- LOAD SCENARIO -----------------
-
-
 def run_order_scenario(
     scenario_id,
     user_id: str,
     gets_per_order: int = 100,
 ) -> dict:
-    """
-    Сценарий одного заказа для одного пользователя (всё строго линейно):
-
-    1. Создать оффер
-    2. Создать заказ
-    3. gets_per_order раз сделать GET /orders/{order_id}
-    4. Завершить заказ
-
-    Для каждого сценария создаётся:
-      - новый уникальный scooter_id,
-      - новый оффер (offer_id),
-      - новый заказ (order_id).
-    """
     client = ClientServiceClient(CLIENT_SERVICE_URL)
     try:
         return run_order_scenario_with_client(client, scenario_id, user_id, gets_per_order)
@@ -123,24 +100,18 @@ def run_order_scenario_with_client(
     gets_per_order: int = 100,
     rate_limiter=None,
 ) -> dict:
-    """
-    Внутренняя функция для выполнения сценария с переданным клиентом.
-    """
     result = {
         "scenario_id": scenario_id,
         "success": False,
         "error": None,
     }
 
-    # Уникальный самокат для данного сценария
     scooter_id = f"load-scooter-{user_id}-{uuid.uuid4()}"
 
     try:
-        # Rate limiting
         if rate_limiter:
             rate_limiter()
         
-        # 1. Создать оффер (НОВЫЙ для каждого сценария)
         offer_resp = client.create_offer(user_id=user_id, scooter_id=scooter_id)
         if offer_resp.status_code != 201:
             raise RuntimeError(
@@ -150,7 +121,6 @@ def run_order_scenario_with_client(
         offer = offer_resp.json()
         offer_id = offer["id"]
 
-        # 2. Создать заказ (РОВНО ОДИН раз для этого offer_id)
         if rate_limiter:
             rate_limiter()
         order_id = f"order-{uuid.uuid4()}"
@@ -160,7 +130,6 @@ def run_order_scenario_with_client(
                 f"create_order failed: {order_resp.status_code}, body={order_resp.text}"
             )
 
-        # 3. gets_per_order раз GET /orders/{order_id}
         for i in range(gets_per_order):
             if rate_limiter:
                 rate_limiter()
@@ -170,12 +139,10 @@ def run_order_scenario_with_client(
                     f"get_order failed on iter {i}: {get_resp.status_code}, body={get_resp.text}"
                 )
 
-        # 4. Завершить заказ
         if rate_limiter:
             rate_limiter()
         finish_resp = client.finish_order(order_id=order_id)
         if finish_resp.status_code not in (200, 409):
-            # 409 - заказ уже завершён, тоже допустимо
             raise RuntimeError(
                 f"finish_order failed: {finish_resp.status_code}, body={finish_resp.text}"
             )
@@ -195,13 +162,7 @@ def run_user_scenarios(
     gets_per_order: int,
     rate_limiter=None,
 ) -> dict:
-    """
-    Выполнить несколько сценариев (заказов) подряд для одного пользователя.
-    Для одного пользователя все заказы идут строго линейно.
-    Переиспользуем один HTTP клиент для всех сценариев пользователя.
-    """
     user_id = f"load-user-{user_index}"
-    # Переиспользуем один клиент для всех сценариев пользователя
     client = ClientServiceClient(CLIENT_SERVICE_URL)
 
     successes = 0
@@ -235,41 +196,33 @@ def run_user_scenarios(
     }
 
 
-# ----------------- MAIN -----------------
-
-
 def main():
     parser = argparse.ArgumentParser(
-        description="Нагрузочный тест клиентского сервиса самокатов"
+        description="Load test for client service"
     )
     parser.add_argument(
         "--concurrency",
         type=int,
         default=200,
-        help="Количество параллельных пользователей (по умолчанию 200 для высокой нагрузки)",
     )
     parser.add_argument(
         "--orders",
         type=int,
         default=100,
-        help="Общее количество сценариев (заказов), которые нужно выполнить",
     )
     parser.add_argument(
         "--gets-per-order",
         type=int,
         default=100,
-        help="Количество GET /orders/{id} на один заказ",
     )
     parser.add_argument(
         "--log-level",
         default="INFO",
-        help="Уровень логирования (DEBUG, INFO, WARNING, ERROR)",
     )
     parser.add_argument(
         "--rate",
         type=int,
         default=0,
-        help="Ограничение RPS (0 = без ограничений). Полезно для постепенного увеличения нагрузки",
     )
     args = parser.parse_args()
 
@@ -285,7 +238,6 @@ def main():
     total_orders = args.orders
     users = args.concurrency
 
-    # Распределяем общее количество заказов по пользователям
     base_orders_per_user = total_orders // users if users > 0 else 0
     remainder = total_orders % users if users > 0 else 0
 
@@ -297,7 +249,6 @@ def main():
     successes = 0
     failures = 0
     
-    # Rate limiting (если указан)
     rate_limiter = None
     if args.rate > 0:
         from threading import Lock
@@ -349,7 +300,6 @@ def main():
         logging.info("Throughput: %.2f scenarios/sec", rps)
         logging.info("Success rate: %.2f%%", (successes / total_orders * 100) if total_orders > 0 else 0)
         
-        # Дополнительные метрики
         if args.rate > 0:
             logging.info("Target rate: %d RPS, Actual: %.2f RPS", args.rate, rps)
 

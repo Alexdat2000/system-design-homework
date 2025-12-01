@@ -20,7 +20,6 @@ def unique_user():
 class TestExternalServiceDegradation:
     """
     Tests for system behavior when external services are degraded.
-    These tests verify the degradation strategies defined in ADR.
     """
     
     def test_scooter_service_data_available(self, external_service, test_scooters):
@@ -72,30 +71,25 @@ class TestExternalServiceDegradation:
 class TestZoneCaching:
     """
     Tests for zone data caching.
-    ADR: При возрасте кэша меньше 10 минут используем данные из кэша
     """
     
     def test_zone_data_consistency(self, client_service, test_zones):
         """Test that zone data is consistently used in offers."""
-        # Create multiple offers in same zone with different scooters
         user_id = unique_user()
-        response1 = client_service.create_offer(user_id, "scooter-1")  # zone-1
-        response2 = client_service.create_offer(user_id, "scooter-2")  # zone-1
+        response1 = client_service.create_offer(user_id, "scooter-1")
+        response2 = client_service.create_offer(user_id, "scooter-2")
         
         offer1 = response1.json()
         offer2 = response2.json()
         
-        # Both should use zone-1 data
         assert offer1["zone_id"] == "zone-1"
         assert offer2["zone_id"] == "zone-1"
         
-        # Zone pricing data should be consistent
 
 
 class TestUnknownUserFallback:
     """
     Tests for unknown user handling.
-    ADR: Недоступность users: формируем оффер как для юзера без привилегий
     """
     
     def test_unknown_user_gets_no_privileges(self, client_service, test_zones):
@@ -105,28 +99,23 @@ class TestUnknownUserFallback:
         assert response.status_code == 201
         offer = response.json()
         
-        # Should pay for unlock (no subscription)
-        zone = test_zones[0]  # zone-1
+        zone = test_zones[0]
         assert offer["price_unlock"] == zone["price_unlock"]
         
-        # Should pay deposit (not trusted)
         assert offer["deposit"] == zone["default_deposit"]
     
     def test_unknown_user_can_complete_ride(self, client_service):
         """Test that unknown user can complete full ride cycle."""
         user_id = unique_user()
         
-        # Create offer
         offer_response = client_service.create_offer(user_id, "scooter-1")
         assert offer_response.status_code == 201
         offer = offer_response.json()
         
-        # Create order
         order_id = str(uuid.uuid4())
         order_response = client_service.create_order(order_id, offer["id"], user_id)
         assert order_response.status_code == 201
         
-        # Finish order
         finish_response = client_service.finish_order(order_id)
         assert finish_response.status_code == 200
         assert finish_response.json()["status"] == "FINISHED"
@@ -139,7 +128,6 @@ class TestNonexistentResources:
         """Test that non-existent scooter returns appropriate error."""
         response = client_service.create_offer(unique_user(), "scooter-does-not-exist")
         
-        # Should return 400 (bad request) or 503 (service unavailable)
         assert response.status_code in [400, 503]
     
     def test_nonexistent_user_can_still_create_offer(self, client_service):
@@ -149,7 +137,6 @@ class TestNonexistentResources:
         """
         response = client_service.create_offer(unique_user(), "scooter-1")
         
-        # Should succeed with default pricing
         assert response.status_code == 201
 
 
@@ -160,11 +147,9 @@ class TestPaymentIntegration:
         """Test that creating order triggers deposit hold."""
         user_id = unique_user()
         
-        # Create offer for user
         offer_response = client_service.create_offer(user_id, "scooter-1")
         offer = offer_response.json()
         
-        # Order creation should succeed (payment hold works)
         order_id = str(uuid.uuid4())
         order_response = client_service.create_order(order_id, offer["id"], user_id)
         
@@ -182,7 +167,6 @@ class TestPaymentIntegration:
         order_id = str(uuid.uuid4())
         client_service.create_order(order_id, offer["id"], user_id)
         
-        # Finish should succeed (payment charge + unhold works)
         finish_response = client_service.finish_order(order_id)
         
         assert finish_response.status_code == 200
@@ -195,13 +179,11 @@ class TestConfigsDynamicBehavior:
     
     def test_configs_affect_pricing(self, client_service, test_configs, test_zones):
         """Test that dynamic configs are applied to pricing."""
-        # Create offer for new user to see full pricing
         response = client_service.create_offer(unique_user(), "scooter-1")
         
         assert response.status_code == 201
         offer = response.json()
         
-        # Verify surge is applied
         zone = test_zones[0]
         expected_price = round(zone["price_per_minute"] * test_configs["surge"])
         

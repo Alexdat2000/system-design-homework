@@ -27,11 +27,8 @@ def normalize_iso_datetime(iso_str: str) -> str:
         Input:  "2025-11-30T20:47:37.042099855Z"
         Output: "2025-11-30T20:47:37.042099+00:00"
     """
-    # Replace Z with +00:00 first
     normalized = iso_str.replace("Z", "+00:00")
     
-    # Match fractional seconds with more than 6 digits: .123456789+00:00
-    # Truncate to 6 digits (microseconds)
     pattern = r'\.(\d{6})\d+(\+00:00)'
     replacement = r'.\1\2'
     normalized = re.sub(pattern, replacement, normalized)
@@ -67,7 +64,6 @@ class TestOfferAPIContract:
         assert isinstance(offer["deposit"], int)
         
         try:
-            # Нормализуем ISO строку: обрезаем наносекунды до микросекунд для совместимости с Python
             expires_at_str = normalize_iso_datetime(offer["expires_at"])
             datetime.fromisoformat(expires_at_str)
         except ValueError:

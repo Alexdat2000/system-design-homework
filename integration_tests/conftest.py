@@ -18,19 +18,16 @@ import requests
 from tenacity import retry, stop_after_delay, wait_fixed
 
 
-# Configuration
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DOCKER_COMPOSE_FILE = os.path.join(PROJECT_ROOT, "docker-compose.yml")
 
 CLIENT_SERVICE_URL = os.environ.get("CLIENT_SERVICE_URL", "http://localhost:8080")
 EXTERNAL_SERVICE_URL = os.environ.get("EXTERNAL_SERVICE_URL", "http://localhost:8081")
 
-# Skip docker-compose if services are already running
 SKIP_DOCKER_COMPOSE = os.environ.get("SKIP_DOCKER_COMPOSE", "0") == "1"
 
-# Timeouts
-STARTUP_TIMEOUT = 120  # seconds
-HEALTH_CHECK_INTERVAL = 2  # seconds
+STARTUP_TIMEOUT = 120
+HEALTH_CHECK_INTERVAL = 2
 
 
 class ServiceClient:
@@ -140,7 +137,6 @@ def docker_services() -> Generator[None, None, None]:
         print("\n Skipping Docker Compose (SKIP_DOCKER_COMPOSE=1)")
         print("Using existing services...")
         
-        # Just verify services are running
         client_client = ClientServiceClient(CLIENT_SERVICE_URL)
         external_client = ExternalServiceClient(EXTERNAL_SERVICE_URL)
         
@@ -157,10 +153,8 @@ def docker_services() -> Generator[None, None, None]:
     
     print("\n Starting Docker services...")
     
-    # Stop any existing containers
     run_docker_compose(["down", "-v", "--remove-orphans"], check=False)
     
-    # Build and start services
     try:
         result = run_docker_compose(["build"], check=False)
         if result.returncode != 0:
@@ -176,7 +170,6 @@ def docker_services() -> Generator[None, None, None]:
         
         print("Docker services started, waiting for health checks...")
         
-        # Wait for services to be healthy
         client_client = ClientServiceClient(CLIENT_SERVICE_URL)
         external_client = ExternalServiceClient(EXTERNAL_SERVICE_URL)
         
@@ -229,7 +222,6 @@ def unique_scooter_id() -> str:
     return "scooter-1"
 
 
-# Test data fixtures based on external/data/*.json
 @pytest.fixture
 def test_users() -> list[dict]:
     """Available test users from external service."""
@@ -248,7 +240,7 @@ def test_scooters() -> list[dict]:
         {"id": "scooter-1", "zone_id": "zone-1", "charge": 85},
         {"id": "scooter-2", "zone_id": "zone-1", "charge": 45},
         {"id": "scooter-3", "zone_id": "zone-2", "charge": 90},
-        {"id": "scooter-4", "zone_id": "zone-2", "charge": 25},  # Low charge
+        {"id": "scooter-4", "zone_id": "zone-2", "charge": 25},
     ]
 
 

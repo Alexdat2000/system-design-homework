@@ -88,7 +88,6 @@
 
 ## Расчёт нагрузки (Scalability)
 
-<<<<<<< HEAD
 **Запись (Write):**
 
 - Orders creation: 1,000 RPS
