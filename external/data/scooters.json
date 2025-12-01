@@ -1,0 +1,23 @@
+[
+  {
+    "id": "scooter-1",
+    "zone_id": "zone-1",
+    "charge": 85
+  },
+  {
+    "id": "scooter-2",
+    "zone_id": "zone-1",
+    "charge": 45
+  },
+  {
+    "id": "scooter-3",
+    "zone_id": "zone-2",
+    "charge": 90
+  },
+  {
+    "id": "scooter-4",
+    "zone_id": "zone-2",
+    "charge": 25
+  }
+]
+

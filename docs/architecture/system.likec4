@@ -1,0 +1,324 @@
+specification {
+
+  // Типы элементов (C4-уровни)
+  element actor {
+    style {
+      shape person
+    }
+  }
+
+  element system
+  element container
+  element component
+
+  element database {
+    style {
+      shape cylinder
+    }
+  }
+
+  element storage {
+    style {
+      shape cylinder
+    }
+  }
+}
+
+model {
+
+  // --- Актор и мобильное приложение ---
+
+  rider = actor 'Пользователь аренды' 'Клиент, берёт самокат в аренду через мобильное приложение'
+
+  mobileApp = system 'Мобильное приложение аренды' 'Клиентское приложение на телефоне. Показывает оффер, статус поездки и управляет стартом/завершением аренды'
+
+  // --- Наша система: backend client ---
+
+  scooterRental = system 'Бэкенд аренды самокатов (client)' 'Единый монолитный сервис, входная точка для клиентов. Отвечает за офферы, заказы и работу с платежами' {
+
+    // --------- Контейнеры ---------
+
+    lb = container 'API Gateway / Load Balancer' 'Балансировщик HTTP-трафика на инстансы сервиса client'
+
+    api = container 'HTTP API сервиса client' 'Монолитный HTTP-сервис. Обрабатывает запросы создания оффера, создания заказа, завершения заказа и чтения статуса' {
+      technology 'Go / HTTP REST'
+
+      // --- Компоненты HTTP API ---
+
+      httpApi = component 'HTTP API / Router' 'Принимает HTTP-запросы, валидирует вход и маршрутизирует в контроллеры'
+
+      offersController = component 'OffersController' 'REST-эндпоинты для создания / обновления оффера'
+
+      ordersController = component 'OrdersController' 'REST-эндпоинты для создания заказа, завершения заказа и получения состояния заказа'
+
+      orderQueryFacade = component 'OrderQueryFacade' 'Фасад для чтения состояния поездки: агрегирует данные заказа и статуса самоката'
+
+      // Домен офферов/ценообразования
+      offersService = component 'OffersService' 'Бизнес-логика формирования оффера: депозит, разблокировка, цена минуты, скидки'
+      pricingService = component 'PricingService' 'Расчёт итоговой цены по тарифам зоны и конфигам (surge, скидки, low_charge_discount)'
+
+      // Домен заказов
+      ordersService = component 'OrdersService' 'Жизненный цикл заказа: валидация оффера, старт, завершение, статусы'
+
+      // Интеграции с внешними системами
+      paymentsClient = component 'PaymentsClient' 'Адаптер к платёжному сервису payments (hold / charge / unhold)'
+      scootersClient = component 'ScootersClient' 'Адаптер к сервису scooters. Запрашивает заряд, зону и состояние самоката'
+      usersClient    = component 'UsersClient'    'Адаптер к сервису users. Читает подписку и доверенность пользователя'
+      zonesClient    = component 'ZonesClient'    'Адаптер к сервису tariff-zones. Кэширует тарифы зон с TTL'
+      configsClient  = component 'ConfigsClient'  'Адаптер к сервису configs. Кэширует динамические конфиги с бесконечным TTL'
+
+      // Доступ к хранилищам
+      offersRepository     = component 'OffersRepository'     'Чтение/запись офферов в Redis (только временное хранение)'
+      ordersRepository     = component 'OrdersRepository'     'Чтение/запись заказов в PostgreSQL (шардированная БД)'
+      paymentTxRepository  = component 'PaymentTxRepository'  'Чтение/запись платёжных транзакций в PostgreSQL'
+      orderCacheRepository = component 'OrderCacheRepository' 'Чтение/запись кэша активных заказов в Redis'
+
+      // Наблюдаемость
+      metrics = component 'Metrics & Logging' 'Отправка бизнес- и тех-метрик, логирование ключевых событий'
+    }
+
+    workers = container 'Фоновые воркеры client' 'Фоновые задачи для архивирования заказов и ретраев платежей' {
+
+      archiver       = component 'OrderArchiver'    'Архивирует заказы старше 1 дня в S3'
+      paymentRetry   = component 'PaymentRetryJob'  'Регулярно переотправляет неуспешные платежи'
+      workersMetrics = component 'WorkersMetrics'   'Метрики и логирование фоновых задач'
+    }
+
+    ordersDb = database 'PostgreSQL (шарды заказов и транзакций)' 'Основная шардированная БД заказов и платёжных транзакций (шардирование по user_id, master + реплики)'
+
+    offersRedis = database 'Redis (офферы)' 'KV-хранилище офферов аренды с коротким TTL. Персистентность не критична'
+
+    ordersCacheRedis = database 'Redis (кэш заказов)' 'KV-кэш активных заказов для быстрого GET-доступа'
+
+    coldStorage = storage 'Холодное хранилище (S3)' 'Архивные заказы и транзакции старше суток, хранятся пачками по часу в объектном хранилище'
+  }
+
+  // --- Внешние системы ---
+
+  scooters = system 'Сервис scooters' 'Управляет самокатами: id, заряд, зона, координаты, статус'
+
+  payments = system 'Сервис payments' 'Платёжный сервис: холд депозита, списание суммы поездки, разморозка остатка'
+
+  tariffZones = system 'Сервис tariff-zones' 'Тарифные зоны: цена минуты, стоимость разблокировки, депозит по умолчанию'
+
+  users = system 'Сервис users' 'Параметры пользователя: наличие подписки, доверенность (обязательность депозита)'
+
+  configs = system 'Сервис configs' 'Динамические конфиги: surge, low_charge_discount, пороги и т.п.'
+
+  observability = system 'Система наблюдаемости' 'Мониторинг и логирование (Prometheus, Grafana, ELK и др.)'
+
+
+  // =====================================================================
+  //               ОТНОШЕНИЯ НА РАЗНЫХ УРОВНЯХ C4
+  // =====================================================================
+
+  // -------- System context: пользователь ↔ приложение ↔ backend --------
+
+  rider     -> mobileApp      'Сканирует QR, управляет началом и завершением поездки' 'Пользовательский UI'
+  mobileApp -> scooterRental  'Вызывает API аренды самокатов'                           'HTTPS / REST'
+
+  // -------- Container level: контейнеры внутри client и внешние системы --------
+
+  mobileApp          -> scooterRental.lb   'Отправляет HTTP-запросы: создание оффера/заказа, завершение, GET статуса' 'HTTPS'
+  scooterRental.lb   -> scooterRental.api  'Маршрутизирует запросы на инстансы API'                                   'HTTP'
+
+  scooterRental.api  -> scooterRental.ordersDb         'Создаёт и обновляет заказы и платёжные транзакции'           'SQL, ACID'
+  scooterRental.api  -> scooterRental.offersRedis      'Читает/записывает офферы аренды'                              'Redis'
+  scooterRental.api  -> scooterRental.ordersCacheRedis 'Кэширует активные заказы для быстрых GET-запросов'           'Redis'
+
+  scooterRental.workers -> scooterRental.ordersDb    'Читает заказы для архивирования и ретраев платежей'            'SQL'
+  scooterRental.workers -> scooterRental.coldStorage 'Выгружает архивные заказы в холодное хранилище'               'S3 API'
+
+  scooterRental.api -> scooters     'Получает заряд и зону самоката по его id'                         'HTTP'
+  scooterRental.api -> payments     'Делает операции hold / charge / unhold по заказу'                 'HTTP/gRPC'
+  scooterRental.api -> tariffZones  'Читает базовые тарифы зоны по zone_id'                            'HTTP'
+  scooterRental.api -> users        'Читает параметры пользователя: подписка, доверенность'            'HTTP'
+  scooterRental.api -> configs      'Читает динамические конфиги ценообразования и деградации'         'HTTP'
+
+  scooterRental.api     -> observability 'Отправляет метрики и логи запросов API и бизнес-событий'     'Prometheus / ELK'
+  scooterRental.workers -> observability 'Отправляет метрики и логи фоновых задач'                     'Prometheus / ELK'
+
+
+  // -------- Component level: связи внутри контейнера api --------
+
+  scooterRental.api {
+
+    // Входной слой
+    httpApi -> offersController 'Маршрутизирует POST /offers (создание оффера)'
+    httpApi -> ordersController 'Маршрутизирует POST /orders, POST /orders/{id}/finish, GET /orders/{id}'
+
+    // Офферы
+    offersController -> offersService 'Передаёт запросы на создание/обновление оффера'
+
+    offersService -> scootersClient   'Запрашивает заряд и zone_id самоката'
+    offersService -> usersClient      'Запрашивает параметры пользователя (подписка, доверенность)'
+    offersService -> zonesClient      'Запрашивает тарифы зоны (price_per_minute, price_unlock, default_deposit)'
+    offersService -> configsClient    'Читает конфиги surge, low_charge_discount, порог низкого заряда, период неоплачиваемой поездки'
+    offersService -> pricingService   'Делегирует расчёт итоговых цен'
+    offersService -> offersRepository 'Сохраняет оффер в Redis с коротким TTL'
+    offersService -> metrics          'Логирует успешное/ошибочное создание оффера'
+
+    pricingService -> configsClient 'При необходимости читает дополнительные параметры ценообразования'
+
+    // Заказы
+    ordersController -> ordersService        'Передаёт бизнес-операции: создать заказ, завершить заказ'
+    ordersController -> orderQueryFacade     'Передаёт запросы на чтение состояния поездки'
+
+    ordersService -> offersRepository        'Проверяет валидность и уникальность использования оффера'
+    ordersService -> paymentsClient          'Вызывает платежи: hold при старте, charge + unhold при завершении'
+    ordersService -> ordersRepository        'Создаёт/обновляет запись заказа в транзакции'
+    ordersService -> paymentTxRepository     'Сохраняет платёжные транзакции (hold/charge/unhold)'
+    ordersService -> orderCacheRepository    'Обновляет/инвалидирует кэш активного заказа'
+    ordersService -> metrics                 'Логирует успех/ошибки по заказам и платежам'
+
+    // Чтение состояния заказа во время поездки
+    orderQueryFacade -> orderCacheRepository 'Пытается прочитать активный заказ из кэша'
+    orderQueryFacade -> ordersRepository     'Читает заказ из БД при промахе кэша'
+    orderQueryFacade -> scootersClient       'Подтягивает актуальный заряд самоката для экрана поездки'
+    orderQueryFacade -> metrics              'Логирует latency и source (кэш/БД/scooters)'
+
+    // Интеграции с внешними системами
+    paymentsClient -> payments   'Вызывает операции hold/charge/unhold в платёжном сервисе'
+    scootersClient -> scooters   'Читает данные по самокату'
+    usersClient    -> users      'Читает параметры пользователя'
+    zonesClient    -> tariffZones 'Читает настройки тарифной зоны'
+    configsClient  -> configs    'Читает значения динамических конфигов'
+
+    // Доступ к хранилищам
+    offersRepository     -> scooterRental.offersRedis      'Читает/записывает офферы'
+    ordersRepository     -> scooterRental.ordersDb         'Читает/записывает заказы'
+    paymentTxRepository  -> scooterRental.ordersDb         'Читает/записывает платёжные транзакции'
+    orderCacheRepository -> scooterRental.ordersCacheRedis 'Читает/записывает кэш активных заказов'
+
+    // Наблюдаемость
+    metrics -> observability 'Отправляет структурированные логи и метрики'
+  }
+
+  // -------- Component level: воркеры --------
+
+  scooterRental.workers {
+
+    archiver     -> scooterRental.ordersDb    'Периодически сканирует заказы старше 24 часов'
+    archiver     -> scooterRental.coldStorage 'Записывает архивные пачки заказов и транзакций в S3'
+    archiver     -> workersMetrics            'Пишет метрики объёма и задержек архивирования'
+
+    paymentRetry -> scooterRental.ordersDb           'Читает заказы с проблемными платежами'
+    paymentRetry -> scooterRental.api.paymentsClient 'Повторно вызывает платёжные операции через общий PaymentsClient'
+    paymentRetry -> workersMetrics                   'Пишет метрики успешных/ошибочных ретраев'
+
+    workersMetrics -> observability 'Отправляет метрики фоновых задач'
+  }
+}
+
+views {
+
+  // ----------------- C4 Level 1: System Context -----------------
+
+  view context {
+
+    title 'Система аренды самокатов — контекст (C4: System)'
+
+    include rider
+    include mobileApp
+    include scooterRental
+    include scooters
+    include payments
+    include tariffZones
+    include users
+    include configs
+    include observability
+
+    style scooterRental {
+      color primary
+    }
+
+    style mobileApp, scooters, payments, tariffZones, users, configs, observability {
+      color secondary
+    }
+
+    style rider {
+      color muted
+    }
+  }
+
+  // ----------------- C4 Level 2: Containers -----------------
+
+  view containers of scooterRental {
+
+    title 'Система аренды самокатов — контейнеры (C4: Containers)'
+
+    include *
+    include mobileApp
+    include rider
+    include scooters
+    include payments
+    include tariffZones
+    include users
+    include configs
+    include observability
+
+    style scooterRental.api,
+          scooterRental.workers,
+          scooterRental.lb,
+          scooterRental.ordersDb,
+          scooterRental.offersRedis,
+          scooterRental.ordersCacheRedis,
+          scooterRental.coldStorage {
+      color primary
+    }
+
+    style mobileApp, scooters, payments, tariffZones, users, configs, observability {
+      color secondary
+    }
+
+    style rider {
+      color muted
+    }
+  }
+
+  // ----------------- C4 Level 3: Components (HTTP API) -----------------
+
+  view components_api of scooterRental.api {
+
+    title 'HTTP-сервис client — компоненты и взаимодействия (C4: Components)'
+
+    include *
+    include mobileApp
+    include rider
+    include scooters
+    include payments
+    include tariffZones
+    include users
+    include configs
+    include scooterRental.ordersDb
+    include scooterRental.offersRedis
+    include scooterRental.ordersCacheRedis
+    include observability
+
+    style scooterRental.api.httpApi,
+          scooterRental.api.offersController,
+          scooterRental.api.ordersController,
+          scooterRental.api.orderQueryFacade {
+      color secondary
+    }
+
+    style scooterRental.api.offersService,
+          scooterRental.api.pricingService,
+          scooterRental.api.ordersService {
+      color primary
+    }
+
+    style scooterRental.api.paymentsClient,
+          scooterRental.api.scootersClient,
+          scooterRental.api.usersClient,
+          scooterRental.api.zonesClient,
+          scooterRental.api.configsClient,
+          scooterRental.api.offersRepository,
+          scooterRental.api.ordersRepository,
+          scooterRental.api.paymentTxRepository,
+          scooterRental.api.orderCacheRepository,
+          scooterRental.api.metrics {
+      color muted
+    }
+  }
+}

@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>External API - External Services</title>
+    <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5.10.3/swagger-ui.css" />
+    <style>
+        html {
+            box-sizing: border-box;
+            overflow: -moz-scrollbars-vertical;
+            overflow-y: scroll;
+        }
+        *, *:before, *:after {
+            box-sizing: inherit;
+        }
+        body {
+            margin:0;
+            background: #fafafa;
+        }
+    </style>
+</head>
+<body>
+    <div id="swagger-ui"></div>
+    <script src="https://unpkg.com/swagger-ui-dist@5.10.3/swagger-ui-bundle.js"></script>
+    <script src="https://unpkg.com/swagger-ui-dist@5.10.3/swagger-ui-standalone-preset.js"></script>
+    <script>
+        window.onload = function() {
+            const spec = {
+                "openapi": "3.0.0",
+                "info": {
+                    "title": "External API",
+                    "version": "1.0",
+                    "description": "API внешних сервисов"
+                },
+                "tags": [
+                    {
+                        "name": "scooters",
+                        "description": "Операции с самокатами"
+                    },
+                    {
+                        "name": "payments",
+                        "description": "Операции с оплатой"
+                    },
+                    {
+                        "name": "zone",
+                        "description": "Операции с тарифными зонами"
+                    },
+                    {
+                        "name": "users",
+                        "description": "Операции с пользователями"
+                    },
+                    {
+                        "name": "configs",
+                        "description": "Динамические конфиги"
+                    }
+                ],
+                "paths": {
+                    "/scooter-data": {
+                        "get": {
+                            "tags": ["scooters"],
+                            "summary": "Получить данные по самокату (заряд и id зоны)",
+                            "parameters": [
+                                {
+                                    "in": "query",
+                                    "name": "id",
+                                    "schema": {
+                                        "type": "string"
+                                    },
+                                    "required": true,
+                                    "description": "Идентификатор самоката"
+                                }
+                            ],
+                            "responses": {
+                                "200": {
+                                    "description": "Данные по самокату",
+                                    "content": {
+                                        "application/json": {
+                                            "schema": {
+                                                "$ref": "#/components/schemas/ScooterData"
+                                            }
+                                        }
+                                    }
+                                },
+                                "404": {
+                                    "description": "Самокат не найден"
+                                }
+                            }
+                        }
+                    },
+                    "/hold-money-for-order": {
+                        "post": {
+                            "tags": ["payments"],
+                            "summary": "Заморозить депозит на карте клиента",
+                            "requestBody": {
+                                "required": true,
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {
+                                                "user_id": {
+                                                    "type": "string"
+                                                },
+                                                "order_id": {
+                                                    "type": "string"
+                                                },
+                                                "amount": {
+                                                    "type": "integer"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "responses": {
+                                "200": {
+                                    "description": "Деньги успешно заблокированы"
+                                }
+                            }
+                        }
+                    },
+                    "/clear-money-for-order": {
+                        "post": {
+                            "tags": ["payments"],
+                            "summary": "Списать деньги за поездку",
+                            "requestBody": {
+                                "required": true,
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {
+                                                "user_id": {
+                                                    "type": "string"
+                                                },
+                                                "order_id": {
+                                                    "type": "string"
+                                                },
+                                                "amount": {
+                                                    "type": "integer"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "responses": {
+                                "200": {
+                                    "description": "Деньги успешно списаны"
+                                }
+                            }
+                        }
+                    },
+                    "/unhold-money-for-order": {
+                        "post": {
+                            "tags": ["payments"],
+                            "summary": "Разморозить депозит на карте клиента",
+                            "requestBody": {
+                                "required": true,
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {
+                                                "user_id": {
+                                                    "type": "string"
+                                                },
+                                                "order_id": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "responses": {
+                                "200": {
+                                    "description": "Деньги успешно разморожены"
+                                }
+                            }
+                        }
+                    },
+                    "/tariff-zone-data": {
+                        "get": {
+                            "tags": ["zone"],
+                            "summary": "Получить данные по тарифной зоне (депозит, стоимость разблокировки и минуты)",
+                            "parameters": [
+                                {
+                                    "in": "query",
+                                    "name": "id",
+                                    "schema": {
+                                        "type": "string"
+                                    },
+                                    "required": true,
+                                    "description": "Идентификатор тарифной зоны"
+                                }
+                            ],
+                            "responses": {
+                                "200": {
+                                    "description": "Данные по тарифной зоне",
+                                    "content": {
+                                        "application/json": {
+                                            "schema": {
+                                                "$ref": "#/components/schemas/TariffZone"
+                                            }
+                                        }
+                                    }
+                                },
+                                "404": {
+                                    "description": "Тарифная зона не найдена"
+                                }
+                            }
+                        }
+                    },
+                    "/user-profile": {
+                        "get": {
+                            "tags": ["users"],
+                            "summary": "Получить параметры пользователя (наличие подписки, обязательность депозита)",
+                            "parameters": [
+                                {
+                                    "in": "query",
+                                    "name": "id",
+                                    "schema": {
+                                        "type": "string"
+                                    },
+                                    "required": true,
+                                    "description": "Идентификатор пользователя"
+                                }
+                            ],
+                            "responses": {
+                                "200": {
+                                    "description": "Профиль пользователя",
+                                    "content": {
+                                        "application/json": {
+                                            "schema": {
+                                                "$ref": "#/components/schemas/UserProfile"
+                                            }
+                                        }
+                                    }
+                                },
+                                "404": {
+                                    "description": "Пользователь не найден"
+                                }
+                            }
+                        }
+                    },
+                    "/configs": {
+                        "get": {
+                            "tags": ["configs"],
+                            "summary": "Получить конфиги системы (динамические конфиги)",
+                            "responses": {
+                                "200": {
+                                    "description": "Словарь с конфигами",
+                                    "content": {
+                                        "application/json": {
+                                            "schema": {
+                                                "type": "object",
+                                                "additionalProperties": true
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "components": {
+                    "schemas": {
+                        "ScooterData": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string"
+                                },
+                                "zone_id": {
+                                    "type": "string"
+                                },
+                                "charge": {
+                                    "type": "integer"
+                                }
+                            },
+                            "required": ["id", "zone_id", "charge"]
+                        },
+                        "TariffZone": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string"
+                                },
+                                "price_per_minute": {
+                                    "type": "integer"
+                                },
+                                "price_unlock": {
+                                    "type": "integer"
+                                },
+                                "default_deposit": {
+                                    "type": "integer"
+                                }
+                            },
+                            "required": ["id", "price_per_minute", "price_unlock", "default_deposit"]
+                        },
+                        "UserProfile": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string"
+                                },
+                                "has_subscription": {
+                                    "type": "boolean"
+                                },
+                                "trusted": {
+                                    "type": "boolean"
+                                }
+                            },
+                            "required": ["id", "has_subscription", "trusted"]
+                        },
+                        "Error": {
+                            "type": "object",
+                            "properties": {
+                                "error": {
+                                    "type": "string"
+                                },
+                                "message": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+            
+            const ui = SwaggerUIBundle({
+                spec: spec,
+                dom_id: '#swagger-ui',
+                deepLinking: true,
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIStandalonePreset
+                ],
+                plugins: [
+                    SwaggerUIBundle.plugins.DownloadUrl
+                ],
+                layout: "StandaloneLayout",
+                validatorUrl: null,
+                tryItOutEnabled: true
+            });
+        };
+    </script>
+</body>
+</html>

@@ -1,0 +1,165 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: scooter-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-scooter_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-scooter_password}
+      POSTGRES_DB: ${POSTGRES_DB:-client-database}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./client/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-scooter_user} -d ${POSTGRES_DB:-client-database}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - scooter-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: scooter-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - scooter-network
+    restart: unless-stopped
+
+  client-service:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: scooter-client
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-scooter_user}:${POSTGRES_PASSWORD:-scooter_password}@postgres:5432/${POSTGRES_DB:-client-database}?sslmode=disable
+      PORT: 8080
+      EXTERNAL_SERVICE_URL: http://external-service:8081
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      external-service:
+        condition: service_healthy
+    networks:
+      - scooter-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "service=client-service"
+
+  external-service:
+    build:
+      context: ./external
+      dockerfile: Dockerfile
+    container_name: scooter-external
+    environment:
+      PORT: 8081
+    ports:
+      - "8081:8081"
+    networks:
+      - scooter-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: scooter-loki
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./grafana/loki-config.yaml:/etc/loki/local-config.yaml
+      - loki-data:/loki
+    networks:
+      - scooter-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  promtail:
+    image: grafana/promtail:latest
+    container_name: scooter-promtail
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./grafana/promtail-config.yaml:/etc/promtail/config.yml
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    networks:
+      - scooter-network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: scooter-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_LOG_LEVEL=info
+      - GF_LOG_FILTERS=datasource:debug,query:debug,dataproxy:debug
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+      - ./grafana/grafana.ini:/etc/grafana/grafana.ini
+    depends_on:
+      loki:
+        condition: service_healthy
+    networks:
+      - scooter-network
+    restart: unless-stopped
+
+  dozzle:
+    image: amir20/dozzle:latest
+    container_name: scooter-dozzle
+    ports:
+      - "9999:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - scooter-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  loki-data:
+    driver: local
+  grafana-data:
+    driver: local
+
+networks:
+  scooter-network:
+    driver: bridge
