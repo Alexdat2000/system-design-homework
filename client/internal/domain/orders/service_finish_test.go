@@ -53,6 +53,7 @@ type mockPayments struct {
 	chargeErr error
 	unholdErr error
 
+	chargeFunc func(ctx context.Context, orderID string, amount int) error
 	chargeCalled bool
 	unholdCalled bool
 }
@@ -65,6 +66,9 @@ func (m *mockPayments) HoldMoneyForOrder(ctx context.Context, req *external.Paym
 }
 func (m *mockPayments) ChargeMoneyForOrder(ctx context.Context, orderID string, amount int) error {
 	m.chargeCalled = true
+	if m.chargeFunc != nil {
+		return m.chargeFunc(ctx, orderID, amount)
+	}
 	return m.chargeErr
 }
 func (m *mockPayments) UnholdMoneyForOrder(ctx context.Context, orderID string) error {
@@ -165,7 +169,7 @@ func TestFinishOrder_Success_ChargeAndUnhold_OK(t *testing.T) {
 	}
 
 	cache := &recordCache{}
-	svc := NewServiceWithCache(repo, nil, pay, cache)
+	svc := NewServiceWithCache(repo, nil, pay, cache, nil)
 
 	res, err := svc.FinishOrder(context.Background(), active.Id)
 	if err != nil {
@@ -247,7 +251,7 @@ func TestFinishOrder_ChargeFails_PaymentFailedStatus(t *testing.T) {
 		unholdErr: nil,
 	}
 	cache := &recordCache{}
-	svc := NewServiceWithCache(repo, nil, pay, cache)
+	svc := NewServiceWithCache(repo, nil, pay, cache, nil)
 
 	res, err := svc.FinishOrder(context.Background(), active.Id)
 	if err != nil {
@@ -298,7 +302,7 @@ func TestFinishOrder_Idempotent_WhenAlreadyFinished(t *testing.T) {
 	}
 	pay := &mockPayments{}
 	cache := &recordCache{}
-	svc := NewServiceWithCache(repo, nil, pay, cache)
+	svc := NewServiceWithCache(repo, nil, pay, cache, nil)
 
 	res, err := svc.FinishOrder(context.Background(), already.Id)
 	if err == nil {
@@ -315,5 +319,211 @@ func TestFinishOrder_Idempotent_WhenAlreadyFinished(t *testing.T) {
 	}
 	if cache.invalidateCalled || cache.setCalled {
 		t.Errorf("cache should not be modified for idempotent finish; inv=%v set=%v", cache.invalidateCalled, cache.setCalled)
+	}
+}
+
+type mockConfigsProvider struct {
+	getConfigsFunc func(ctx context.Context) (*external.DynamicConfigs, error)
+}
+
+func (m *mockConfigsProvider) GetConfigs(ctx context.Context) (*external.DynamicConfigs, error) {
+	if m.getConfigsFunc != nil {
+		return m.getConfigsFunc(ctx)
+	}
+	return &external.DynamicConfigs{
+		IncompleteRideThresholdSeconds: 5,
+	}, nil
+}
+
+func TestFinishOrder_IncompleteRide_NoCharge(t *testing.T) {
+	startTime := time.Now().Add(-3 * time.Second) // 3 seconds ago
+	active := &api.Order{
+		Id:        "order-incomplete",
+		UserId:    "user-1",
+		Status:    api.ACTIVE,
+		StartTime: startTime,
+		PricePerMinute: func() *int { v := 10; return &v }(),
+		PriceUnlock:    func() *int { v := 20; return &v }(),
+	}
+
+	calls := 0
+	repo := &mockFinishOrderRepository{
+		getOrderByIDFunc: func(ctx context.Context, orderID string) (*api.Order, error) {
+			calls++
+			if calls == 1 {
+				return active, nil
+			}
+			// Return finished order on second call
+			finished := *active
+			finished.Status = api.FINISHED
+			now := time.Now()
+			finished.FinishTime = &now
+			duration := 3
+			finished.DurationSeconds = &duration
+			return &finished, nil
+		},
+		finishOrderFunc: func(ctx context.Context, orderID string, finishTime time.Time, durationSeconds int, totalAmount int, finalStatus api.OrderStatus, chargeSuccess bool, unholdSuccess bool, chargeTxID string) error {
+			if totalAmount != 0 {
+				t.Errorf("expected totalAmount=0 for incomplete ride, got %d", totalAmount)
+			}
+			if !chargeSuccess {
+				t.Errorf("expected chargeSuccess=true even for 0 amount")
+			}
+			return nil
+		},
+	}
+
+	chargeAmount := -1
+	pay := &mockPayments{
+		chargeFunc: func(ctx context.Context, orderID string, amount int) error {
+			chargeAmount = amount
+			return nil
+		},
+		unholdErr: nil,
+	}
+
+	configsProvider := &mockConfigsProvider{
+		getConfigsFunc: func(ctx context.Context) (*external.DynamicConfigs, error) {
+			return &external.DynamicConfigs{
+				IncompleteRideThresholdSeconds: 5,
+			}, nil
+		},
+	}
+
+	svc := NewServiceWithCache(repo, nil, pay, nil, configsProvider)
+
+	res, err := svc.FinishOrder(context.Background(), active.Id)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res == nil {
+		t.Fatalf("expected order, got nil")
+	}
+	if chargeAmount != 0 {
+		t.Errorf("expected charge amount=0 for incomplete ride (<5s), got %d", chargeAmount)
+	}
+	if res.Status != api.FINISHED {
+		t.Errorf("expected status FINISHED, got %s", res.Status)
+	}
+}
+
+func TestFinishOrder_CompleteRide_ChargeApplied(t *testing.T) {
+	startTime := time.Now().Add(-10 * time.Second) // 10 seconds ago
+	active := &api.Order{
+		Id:        "order-complete",
+		UserId:    "user-1",
+		Status:    api.ACTIVE,
+		StartTime: startTime,
+		PricePerMinute: func() *int { v := 10; return &v }(),
+		PriceUnlock:    func() *int { v := 20; return &v }(),
+	}
+
+	calls := 0
+	repo := &mockFinishOrderRepository{
+		getOrderByIDFunc: func(ctx context.Context, orderID string) (*api.Order, error) {
+			calls++
+			if calls == 1 {
+				return active, nil
+			}
+			// Return finished order on second call
+			finished := *active
+			finished.Status = api.FINISHED
+			now := time.Now()
+			finished.FinishTime = &now
+			duration := 10
+			finished.DurationSeconds = &duration
+			return &finished, nil
+		},
+		finishOrderFunc: func(ctx context.Context, orderID string, finishTime time.Time, durationSeconds int, totalAmount int, finalStatus api.OrderStatus, chargeSuccess bool, unholdSuccess bool, chargeTxID string) error {
+			// 10 seconds = 1 minute (ceil), so total should be 20 (unlock) + 10 (1 min * 10) = 30
+			expectedTotal := 30
+			if totalAmount != expectedTotal {
+				t.Errorf("expected totalAmount=%d for complete ride, got %d", expectedTotal, totalAmount)
+			}
+			return nil
+		},
+	}
+
+	chargeAmount := -1
+	pay := &mockPayments{
+		chargeFunc: func(ctx context.Context, orderID string, amount int) error {
+			chargeAmount = amount
+			return nil
+		},
+		unholdErr: nil,
+	}
+
+	configsProvider := &mockConfigsProvider{
+		getConfigsFunc: func(ctx context.Context) (*external.DynamicConfigs, error) {
+			return &external.DynamicConfigs{
+				IncompleteRideThresholdSeconds: 5,
+			}, nil
+		},
+	}
+
+	svc := NewServiceWithCache(repo, nil, pay, nil, configsProvider)
+
+	res, err := svc.FinishOrder(context.Background(), active.Id)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res == nil {
+		t.Fatalf("expected order, got nil")
+	}
+	if chargeAmount != 30 {
+		t.Errorf("expected charge amount=30 for complete ride (>=5s), got %d", chargeAmount)
+	}
+	if res.Status != api.FINISHED {
+		t.Errorf("expected status FINISHED, got %s", res.Status)
+	}
+}
+
+func TestFinishOrder_IncompleteRide_DefaultThreshold(t *testing.T) {
+	startTime := time.Now().Add(-3 * time.Second) // 3 seconds ago
+	active := &api.Order{
+		Id:        "order-incomplete-default",
+		UserId:    "user-1",
+		Status:    api.ACTIVE,
+		StartTime: startTime,
+		PricePerMinute: func() *int { v := 10; return &v }(),
+		PriceUnlock:    func() *int { v := 20; return &v }(),
+	}
+
+	repo := &mockFinishOrderRepository{
+		getOrderByIDFunc: func(ctx context.Context, orderID string) (*api.Order, error) {
+			if orderID == "order-incomplete-default" {
+				return active, nil
+			}
+			return nil, nil
+		},
+		finishOrderFunc: func(ctx context.Context, orderID string, finishTime time.Time, durationSeconds int, totalAmount int, finalStatus api.OrderStatus, chargeSuccess bool, unholdSuccess bool, chargeTxID string) error {
+			if totalAmount != 0 {
+				t.Errorf("expected totalAmount=0 for incomplete ride, got %d", totalAmount)
+			}
+			return nil
+		},
+	}
+
+	chargeAmount := -1
+	pay := &mockPayments{
+		chargeFunc: func(ctx context.Context, orderID string, amount int) error {
+			chargeAmount = amount
+			return nil
+		},
+		unholdErr: nil,
+	}
+
+	// Service without configsProvider - should use default threshold of 5
+	svc := NewServiceWithCache(repo, nil, pay, nil, nil)
+
+	res, err := svc.FinishOrder(context.Background(), active.Id)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res == nil {
+		t.Fatalf("expected order, got nil")
+	}
+	if chargeAmount != 0 {
+		t.Errorf("expected charge amount=0 for incomplete ride with default threshold, got %d", chargeAmount)
 	}
 }

@@ -309,8 +309,8 @@ class TestOrderFinishing:
         order_id = str(uuid.uuid4())
         client_service.create_order(order_id, offer["id"], user_id)
         
-        # Wait for some time to ensure at least 1 minute
-        time.sleep(2)
+        # Wait for some time to ensure ride duration exceeds incomplete_ride_threshold (5 seconds)
+        time.sleep(6)  # 6 seconds > 5 seconds threshold, so payment will be charged
         
         response = client_service.finish_order(order_id)
         order = response.json()
@@ -405,6 +405,9 @@ class TestOrderLifecycle:
         assert get_response.status_code == 200
         active_order = get_response.json()
         assert active_order["status"] == "ACTIVE"
+        
+        # Wait to ensure ride duration exceeds incomplete_ride_threshold (5 seconds)
+        time.sleep(6)  # Total duration will be >= 7 seconds
         
         # Step 4: Finish order
         finish_response = client_service.finish_order(order_id)

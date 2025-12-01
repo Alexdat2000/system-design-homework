@@ -72,7 +72,7 @@ func main() {
 	}
 
 	orderCache := redis.NewOrderCache(redisClient)
-	ordersService := orders.NewServiceWithCache(orderRepo, offerRepo, extClient, orderCache)
+	ordersService := orders.NewServiceWithCache(orderRepo, offerRepo, extClient, orderCache, extClient)
 	offersService := offers.NewService(offerRepo, extClient)
 
 	ordersHandler := handler.NewOrdersHandler(ordersService)

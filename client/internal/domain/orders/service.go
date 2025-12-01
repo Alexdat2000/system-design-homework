@@ -19,12 +19,18 @@ var (
 	ErrOfferAlreadyUsed = errors.New("offer already used")
 	ErrInvalidUser = errors.New("user_id doesn't match offer")
 	ErrOrderNotActive = errors.New("order not active")
+	ErrNoSuchOrder = errors.New("order not found")
 )
 
 type OrderCache interface {
 	GetOrder(ctx context.Context, orderID string) (*api.Order, error)
 	SetOrder(ctx context.Context, order *api.Order, ttl time.Duration) error
 	Invalidate(ctx context.Context, orderID string) error
+}
+
+// ConfigsProvider provides access to dynamic configuration
+type ConfigsProvider interface {
+	GetConfigs(ctx context.Context) (*external.DynamicConfigs, error)
 }
 
 type ServiceInterface interface {
@@ -39,19 +45,21 @@ type Service struct {
 	paymentsClient external.PaymentsClientInterface
 	cache          OrderCache
 	singleFlight   *singleflight.Group
+	configsProvider ConfigsProvider
 }
 
 func NewService(orderRepo Repository, offerRepo offers.Repository, paymentsClient external.PaymentsClientInterface) *Service {
-	return NewServiceWithCache(orderRepo, offerRepo, paymentsClient, nil)
+	return NewServiceWithCache(orderRepo, offerRepo, paymentsClient, nil, nil)
 }
 
-func NewServiceWithCache(orderRepo Repository, offerRepo offers.Repository, paymentsClient external.PaymentsClientInterface, cache OrderCache) *Service {
+func NewServiceWithCache(orderRepo Repository, offerRepo offers.Repository, paymentsClient external.PaymentsClientInterface, cache OrderCache, configsProvider ConfigsProvider) *Service {
 	return &Service{
-		orderRepo:      orderRepo,
-		offerRepo:      offerRepo,
-		paymentsClient: paymentsClient,
-		cache:          cache,
-		singleFlight:   &singleflight.Group{},
+		orderRepo:       orderRepo,
+		offerRepo:       offerRepo,
+		paymentsClient:  paymentsClient,
+		cache:           cache,
+		singleFlight:    &singleflight.Group{},
+		configsProvider: configsProvider,
 	}
 }
 
@@ -194,6 +202,14 @@ func (s *Service) FinishOrder(ctx context.Context, orderID string) (*api.Order, 
 		durationSeconds = 0
 	}
 
+	// Get incomplete ride threshold from configs
+	incompleteRideThreshold := 5 // default value
+	if s.configsProvider != nil {
+		if cfg, err := s.configsProvider.GetConfigs(ctx); err == nil && cfg != nil {
+			incompleteRideThreshold = cfg.IncompleteRideThresholdSeconds
+		}
+	}
+
 	ppm := 0
 	if order.PricePerMinute != nil {
 		ppm = *order.PricePerMinute
@@ -202,9 +218,14 @@ func (s *Service) FinishOrder(ctx context.Context, orderID string) (*api.Order, 
 	if order.PriceUnlock != nil {
 		unlock = *order.PriceUnlock
 	}
-	minutes := int(math.Ceil(float64(durationSeconds) / 60.0))
-	usage := minutes * ppm
-	total := unlock + usage
+
+	// Calculate total: if ride duration is less than threshold, charge is 0
+	total := 0
+	if durationSeconds >= incompleteRideThreshold {
+		minutes := int(math.Ceil(float64(durationSeconds) / 60.0))
+		usage := minutes * ppm
+		total = unlock + usage
+	}
 
 	chargeErr := s.paymentsClient.ChargeMoneyForOrder(ctx, orderID, total)
 	chargeSuccess := chargeErr == nil
