@@ -6,10 +6,9 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 
 from pipeline_tasks import (
-    build_marts,
+    build_mart,
     load_orders_dds,
     load_orders_rps_minute_dds,
-    load_payments_dds,
 )
 
 
@@ -30,14 +29,28 @@ with DAG(
 ) as dag:
     # DDS loads (can run in parallel)
     t_orders = PythonOperator(task_id="load_orders_dds", python_callable=load_orders_dds)
-    t_payments = PythonOperator(task_id="load_payments_dds", python_callable=load_payments_dds)
     t_rps = PythonOperator(
         task_id="load_orders_rps_minute_dds", python_callable=load_orders_rps_minute_dds
     )
 
-    # MART build (sequential after all DDS loads finish)
-    t_marts = PythonOperator(task_id="build_marts", python_callable=build_marts)
+    # MART builds (run in parallel after all DDS loads finish)
+    t_mart_rps = PythonOperator(
+        task_id="build_mart_rps_minute",
+        python_callable=build_mart,
+        op_kwargs={"sql_filename": "mart_rps_minute.sql"},
+    )
+    t_mart_orders = PythonOperator(
+        task_id="build_mart_orders_minute",
+        python_callable=build_mart,
+        op_kwargs={"sql_filename": "mart_orders_minute.sql"},
+    )
 
-    [t_orders, t_payments, t_rps] >> t_marts
+    marts = [
+        t_mart_rps,
+        t_mart_orders,
+    ]
+
+    for upstream in (t_orders, t_rps):
+        upstream >> marts
 
 

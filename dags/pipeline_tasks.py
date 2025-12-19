@@ -87,62 +87,6 @@ def load_orders_dds(batch_size: int = 5000) -> None:
 
     logger.info("orders loaded rows: %d", total)
 
-
-def load_payments_dds(batch_size: int = 5000) -> None:
-    """
-    Full refresh: load ALL payment_transactions from Postgres into ClickHouse DDS.
-    """
-    ch = ch_client()
-    pg = PostgresHook(postgres_conn_id="postgres_default")
-
-    _truncate(ch, "analytics.dds_payment_transactions")
-    watermark = "1970-01-01 00:00:00.000000"
-
-    total = 0
-    while True:
-        with pg.get_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT
-                        id, order_id, user_id,
-                        transaction_type, amount, status,
-                        external_transaction_id, error_message,
-                        created_at
-                    FROM payment_transactions
-                    WHERE created_at > %s
-                    ORDER BY created_at ASC
-                    LIMIT %s
-                    """,
-                    (watermark, batch_size),
-                )
-                rows = cur.fetchall()
-
-        if not rows:
-            break
-
-        ch.insert(
-            "analytics.dds_payment_transactions",
-            rows,
-            column_names=[
-                "id",
-                "order_id",
-                "user_id",
-                "transaction_type",
-                "amount",
-                "status",
-                "external_transaction_id",
-                "error_message",
-                "created_at",
-            ],
-        )
-
-        total += len(rows)
-        watermark = rows[-1][-1].strftime("%Y-%m-%d %H:%M:%S.%f")
-
-    logger.info("payment_transactions loaded rows: %d", total)
-
-
 def load_orders_rps_minute_dds(batch_size: int = 5000) -> None:
     """
     Full refresh: load ALL orders_rps_minute from Postgres into ClickHouse DDS.
@@ -219,11 +163,16 @@ def build_marts() -> None:
     for name in [
         "mart_rps_minute.sql",
         "mart_orders_minute.sql",
-        "mart_revenue_minute.sql",
-        "mart_payments_minute.sql",
-        "mart_pricing_minute.sql",
-        "mart_duration_minute.sql",
     ]:
         run_sql_file_in_clickhouse(base / name)
+
+
+def build_mart(sql_filename: str) -> None:
+    """
+    Build a single mart by executing its SQL file.
+    Intended for separate Airflow tasks (so the UI shows multiple cubes).
+    """
+    base = Path("/opt/airflow/sql/marts")
+    run_sql_file_in_clickhouse(base / sql_filename)
 
 
