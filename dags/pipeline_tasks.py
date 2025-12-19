@@ -23,33 +23,20 @@ def ch_client():
     )
 
 
-def get_watermark(ch, pipeline: str, default_value: str) -> str:
-    rows = ch.query(
-        "SELECT last_value FROM analytics.etl_state WHERE pipeline = %(p)s "
-        "ORDER BY updated_at DESC LIMIT 1",
-        parameters={"p": pipeline},
-    ).result_rows
-    if not rows:
-        return default_value
-    return rows[0][0]
-
-
-def set_watermark(ch, pipeline: str, value: str) -> None:
-    ch.command(
-        "INSERT INTO analytics.etl_state (pipeline, last_value) VALUES (%(p)s, %(v)s)",
-        parameters={"p": pipeline, "v": value},
-    )
+def _truncate(ch, table: str) -> None:
+    # Full refresh behavior: always rebuild DDS tables from scratch.
+    ch.command(f"TRUNCATE TABLE IF EXISTS {table}")
 
 
 def load_orders_dds(batch_size: int = 5000) -> None:
     """
-    Incrementally load orders from Postgres into ClickHouse DDS by orders.updated_at watermark.
+    Full refresh: load ALL orders from Postgres into ClickHouse DDS.
     """
     ch = ch_client()
     pg = PostgresHook(postgres_conn_id="postgres_default")
 
-    watermark = get_watermark(ch, "orders.updated_at", "1970-01-01 00:00:00.000000")
-    logger.info("orders watermark: %s", watermark)
+    _truncate(ch, "analytics.dds_orders")
+    watermark = "1970-01-01 00:00:00.000000"
 
     total = 0
     while True:
@@ -97,22 +84,19 @@ def load_orders_dds(batch_size: int = 5000) -> None:
 
         total += len(rows)
         watermark = rows[-1][-1].strftime("%Y-%m-%d %H:%M:%S.%f")
-        set_watermark(ch, "orders.updated_at", watermark)
 
     logger.info("orders loaded rows: %d", total)
 
 
 def load_payments_dds(batch_size: int = 5000) -> None:
     """
-    Incrementally load payment_transactions from Postgres into ClickHouse DDS by created_at watermark.
+    Full refresh: load ALL payment_transactions from Postgres into ClickHouse DDS.
     """
     ch = ch_client()
     pg = PostgresHook(postgres_conn_id="postgres_default")
 
-    watermark = get_watermark(
-        ch, "payment_transactions.created_at", "1970-01-01 00:00:00.000000"
-    )
-    logger.info("payment_transactions watermark: %s", watermark)
+    _truncate(ch, "analytics.dds_payment_transactions")
+    watermark = "1970-01-01 00:00:00.000000"
 
     total = 0
     while True:
@@ -155,20 +139,19 @@ def load_payments_dds(batch_size: int = 5000) -> None:
 
         total += len(rows)
         watermark = rows[-1][-1].strftime("%Y-%m-%d %H:%M:%S.%f")
-        set_watermark(ch, "payment_transactions.created_at", watermark)
 
     logger.info("payment_transactions loaded rows: %d", total)
 
 
 def load_orders_rps_minute_dds(batch_size: int = 5000) -> None:
     """
-    Incrementally load orders_rps_minute from Postgres into ClickHouse DDS by minute_ts watermark.
+    Full refresh: load ALL orders_rps_minute from Postgres into ClickHouse DDS.
     """
     ch = ch_client()
     pg = PostgresHook(postgres_conn_id="postgres_default")
 
-    watermark = get_watermark(ch, "orders_rps_minute.minute_ts", "1970-01-01 00:00:00")
-    logger.info("orders_rps_minute watermark: %s", watermark)
+    _truncate(ch, "analytics.dds_orders_rps_minute")
+    watermark = "1970-01-01 00:00:00"
 
     total = 0
     while True:
@@ -201,13 +184,24 @@ def load_orders_rps_minute_dds(batch_size: int = 5000) -> None:
 
         total += len(rows)
         watermark = rows[-1][0].strftime("%Y-%m-%d %H:%M:%S")
-        set_watermark(ch, "orders_rps_minute.minute_ts", watermark)
 
     logger.info("orders_rps_minute loaded rows: %d", total)
 
 
 def _split_sql(sql: str) -> List[str]:
-    return [s.strip() for s in sql.split(";") if s.strip()]
+    # Naive ';' splitting breaks when SQL files contain semicolons in comments.
+    # ClickHouse treats comment-only input as an empty query and errors.
+    # For our use-case, it's sufficient to drop full-line comments and then split.
+    filtered_lines: List[str] = []
+    for line in sql.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("--"):
+            continue
+        filtered_lines.append(line)
+    filtered = "\n".join(filtered_lines)
+    return [s.strip() for s in filtered.split(";") if s.strip()]
 
 
 def run_sql_file_in_clickhouse(path: Path) -> None:
@@ -222,7 +216,14 @@ def run_sql_file_in_clickhouse(path: Path) -> None:
 def build_marts() -> None:
     # Airflow container has repo SQL mounted at /opt/airflow/sql
     base = Path("/opt/airflow/sql/marts")
-    for name in ["mart_rps_minute.sql", "mart_orders_daily.sql"]:
+    for name in [
+        "mart_rps_minute.sql",
+        "mart_orders_minute.sql",
+        "mart_revenue_minute.sql",
+        "mart_payments_minute.sql",
+        "mart_pricing_minute.sql",
+        "mart_duration_minute.sql",
+    ]:
         run_sql_file_in_clickhouse(base / name)
 
 
