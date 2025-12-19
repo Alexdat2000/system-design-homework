@@ -104,7 +104,13 @@ def run_long_lived_order(
     gets_per_order: int,
     finish_ratio: float,
     get_jitter_s: float,
+    planned_start_ts: float,
 ) -> ScenarioResult:
+    # Spread start times across the configured window to avoid all orders being created in one minute.
+    now = time.time()
+    if planned_start_ts > now:
+        time.sleep(planned_start_ts - now)
+
     # Using load-* user IDs so external-service maps them to existing users,
     # but keeping scooter_id real (scooter-1..4) so we get zone-based pricing diversity.
     user_id = f"load-user-{idx}-{uuid.uuid4()}"
@@ -230,6 +236,19 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=0, help="Random seed (0 means time-based)")
     parser.add_argument("--log-level", default="INFO")
     parser.add_argument("--get-jitter", type=float, default=0.8, help="Random jitter added/subtracted to GET sleeps (seconds)")
+    parser.add_argument(
+        "--start-window",
+        type=int,
+        default=0,
+        help="Spread order starts uniformly across this many seconds (0 = start immediately). "
+             "Useful to avoid all created_at landing in the same minute.",
+    )
+    parser.add_argument(
+        "--start-pattern",
+        choices=["uniform", "even"],
+        default="uniform",
+        help="How to distribute order start times within start-window.",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -264,8 +283,22 @@ def main() -> None:
     started = time.time()
     results: list[ScenarioResult] = []
 
+    # Pre-compute planned start times for each order to spread creation timestamps across time.
+    planned_starts: list[float] = []
+    if args.start_window <= 0:
+        planned_starts = [started for _ in range(args.orders)]
+    else:
+        if args.start_pattern == "even":
+            if args.orders == 1:
+                planned_starts = [started]
+            else:
+                step = args.start_window / float(args.orders - 1)
+                planned_starts = [started + (i * step) for i in range(args.orders)]
+        else:
+            planned_starts = [started + random.uniform(0, args.start_window) for _ in range(args.orders)]
+
     logging.info(
-        "Seeding: orders=%d concurrency=%d gets_per_order=%d duration=[%d..%d] finish_ratio=%.2f scooters=%s",
+        "Seeding: orders=%d concurrency=%d gets_per_order=%d duration=[%d..%d] finish_ratio=%.2f scooters=%s start_window=%ss pattern=%s",
         args.orders,
         args.concurrency,
         args.gets_per_order,
@@ -273,6 +306,8 @@ def main() -> None:
         args.max_duration,
         args.finish_ratio,
         scooters,
+        args.start_window,
+        args.start_pattern,
     )
 
     with ThreadPoolExecutor(max_workers=args.concurrency) as ex:
@@ -288,6 +323,7 @@ def main() -> None:
                     args.gets_per_order,
                     args.finish_ratio,
                     args.get_jitter,
+                    planned_starts[i],
                 )
             )
 
