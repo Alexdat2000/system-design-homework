@@ -21,7 +21,7 @@ import logging
 import random
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from dataclasses import dataclass
 from typing import Optional
 
@@ -99,22 +99,21 @@ def _sleep_jitter(base_seconds: float, jitter: float) -> None:
 def run_long_lived_order(
     idx: int,
     scooters: list[str],
+    scooter_id_mode: str,
     min_duration_s: int,
     max_duration_s: int,
     gets_per_order: int,
     finish_ratio: float,
     get_jitter_s: float,
-    planned_start_ts: float,
 ) -> ScenarioResult:
-    # Spread start times across the configured window to avoid all orders being created in one minute.
-    now = time.time()
-    if planned_start_ts > now:
-        time.sleep(planned_start_ts - now)
-
     # Using load-* user IDs so external-service maps them to existing users,
     # but keeping scooter_id real (scooter-1..4) so we get zone-based pricing diversity.
     user_id = f"load-user-{idx}-{uuid.uuid4()}"
-    scooter_id = random.choice(scooters)
+    if scooter_id_mode == "load":
+        # external-service will map load-* scooter IDs to real scooters/zones deterministically
+        scooter_id = f"load-scooter-{idx}-{uuid.uuid4()}"
+    else:
+        scooter_id = random.choice(scooters)
     duration_s = random.randint(min_duration_s, max_duration_s)
     do_finish = random.random() < finish_ratio
 
@@ -233,6 +232,12 @@ def main() -> None:
         default="scooter-1,scooter-2,scooter-3,scooter-4",
         help="Comma-separated scooter ids (use real ids for pricing diversity)",
     )
+    parser.add_argument(
+        "--scooter-id-mode",
+        choices=["load", "real"],
+        default="load",
+        help="How to generate scooter_id. 'load' uses load-scooter-* to leverage external-service variety.",
+    )
     parser.add_argument("--seed", type=int, default=0, help="Random seed (0 means time-based)")
     parser.add_argument("--log-level", default="INFO")
     parser.add_argument("--get-jitter", type=float, default=0.8, help="Random jitter added/subtracted to GET sleeps (seconds)")
@@ -245,9 +250,27 @@ def main() -> None:
     )
     parser.add_argument(
         "--start-pattern",
-        choices=["uniform", "even"],
+        choices=["uniform", "even", "waves"],
         default="uniform",
         help="How to distribute order start times within start-window.",
+    )
+    parser.add_argument(
+        "--wave-period",
+        type=int,
+        default=120,
+        help="For start-pattern=waves: seconds between wave peaks.",
+    )
+    parser.add_argument(
+        "--wave-width",
+        type=float,
+        default=10.0,
+        help="For start-pattern=waves: standard deviation (seconds) around each peak.",
+    )
+    parser.add_argument(
+        "--wave-strength",
+        type=float,
+        default=0.85,
+        help="For start-pattern=waves: fraction of orders placed near peaks (rest are uniform).",
     )
     args = parser.parse_args()
 
@@ -269,7 +292,7 @@ def main() -> None:
         raise SystemExit("finish-ratio must be within [0,1]")
 
     scooters = [s.strip() for s in args.scooters.split(",") if s.strip()]
-    if not scooters:
+    if args.scooter_id_mode == "real" and not scooters:
         raise SystemExit("no scooters provided")
 
     logging.info("CLIENT_SERVICE_URL=%s", CLIENT_SERVICE_URL)
@@ -283,55 +306,114 @@ def main() -> None:
     started = time.time()
     results: list[ScenarioResult] = []
 
-    # Pre-compute planned start times for each order to spread creation timestamps across time.
-    planned_starts: list[float] = []
+    # Pre-compute planned start offsets to spread creation timestamps across time.
+    # We schedule submissions at these offsets (instead of sleeping inside worker threads),
+    # so the wave/shape is preserved even when concurrency < orders.
+    planned_offsets: list[float] = []
     if args.start_window <= 0:
-        planned_starts = [started for _ in range(args.orders)]
-    else:
-        if args.start_pattern == "even":
-            if args.orders == 1:
-                planned_starts = [started]
-            else:
-                step = args.start_window / float(args.orders - 1)
-                planned_starts = [started + (i * step) for i in range(args.orders)]
+        planned_offsets = [0.0 for _ in range(args.orders)]
+    elif args.start_pattern == "even":
+        if args.orders == 1:
+            planned_offsets = [0.0]
         else:
-            planned_starts = [started + random.uniform(0, args.start_window) for _ in range(args.orders)]
+            step = args.start_window / float(args.orders - 1)
+            planned_offsets = [i * step for i in range(args.orders)]
+    elif args.start_pattern == "waves":
+        if args.wave_period <= 0:
+            raise SystemExit("wave-period must be > 0")
+        if args.wave_width <= 0:
+            raise SystemExit("wave-width must be > 0")
+        if not (0.0 <= args.wave_strength <= 1.0):
+            raise SystemExit("wave-strength must be within [0,1]")
+
+        peaks: list[float] = []
+        t = 0.0
+        while t <= args.start_window:
+            peaks.append(t)
+            t += float(args.wave_period)
+        if not peaks:
+            peaks = [0.0]
+
+        for _ in range(args.orders):
+            if random.random() < args.wave_strength:
+                peak = random.choice(peaks)
+                off = peak + random.gauss(0.0, args.wave_width)
+            else:
+                off = random.uniform(0.0, float(args.start_window))
+            # clamp into window
+            off = max(0.0, min(float(args.start_window), off))
+            planned_offsets.append(off)
+    else:
+        planned_offsets = [random.uniform(0.0, float(args.start_window)) for _ in range(args.orders)]
+
+    planned_offsets.sort()
 
     logging.info(
-        "Seeding: orders=%d concurrency=%d gets_per_order=%d duration=[%d..%d] finish_ratio=%.2f scooters=%s start_window=%ss pattern=%s",
+        "Seeding: orders=%d concurrency=%d gets_per_order=%d duration=[%d..%d] finish_ratio=%.2f scooter_id_mode=%s scooters=%s start_window=%ss pattern=%s",
         args.orders,
         args.concurrency,
         args.gets_per_order,
         args.min_duration,
         args.max_duration,
         args.finish_ratio,
+        args.scooter_id_mode,
         scooters,
         args.start_window,
         args.start_pattern,
     )
+    if args.start_pattern == "waves" and args.start_window > 0:
+        logging.info(
+            "Waves: period=%ss width=%.1fs strength=%.2f",
+            args.wave_period,
+            args.wave_width,
+            args.wave_strength,
+        )
 
     with ThreadPoolExecutor(max_workers=args.concurrency) as ex:
-        futures = []
-        for i in range(args.orders):
-            futures.append(
+        futures = set()
+        for i, off in enumerate(planned_offsets):
+            target_ts = started + off
+            now = time.time()
+            if target_ts > now:
+                time.sleep(target_ts - now)
+
+            # Keep at most concurrency tasks actively running.
+            while len(futures) >= args.concurrency:
+                done, futures = wait(futures, return_when=FIRST_COMPLETED)
+                for f in done:
+                    res = f.result()
+                    results.append(res)
+                    if not res.ok:
+                        logging.warning(
+                            "failed: scooter=%s duration=%ss err=%s",
+                            res.scooter_id, res.duration_s, res.error,
+                        )
+
+            futures.add(
                 ex.submit(
                     run_long_lived_order,
                     i,
                     scooters,
+                    args.scooter_id_mode,
                     args.min_duration,
                     args.max_duration,
                     args.gets_per_order,
                     args.finish_ratio,
                     args.get_jitter,
-                    planned_starts[i],
                 )
             )
 
-        for f in as_completed(futures):
-            res = f.result()
-            results.append(res)
-            if not res.ok:
-                logging.warning("failed: scooter=%s duration=%ss err=%s", res.scooter_id, res.duration_s, res.error)
+        # Collect remaining.
+        if futures:
+            done, _ = wait(futures)
+            for f in done:
+                res = f.result()
+                results.append(res)
+                if not res.ok:
+                    logging.warning(
+                        "failed: scooter=%s duration=%ss err=%s",
+                        res.scooter_id, res.duration_s, res.error,
+                    )
 
     elapsed = time.time() - started
     ok = [r for r in results if r.ok]

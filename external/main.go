@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"log"
 	"net/http"
 	"os"
@@ -67,6 +68,16 @@ type Server struct {
 	storage *Storage
 }
 
+func hash32(s string) uint32 {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(s))
+	return h.Sum32()
+}
+
+func pickByHash[T any](items []T, key string) T {
+	return items[int(hash32(key))%len(items)]
+}
+
 func NewServer() (*Server, error) {
 	storage := NewStorage()
 	if err := storage.LoadFromJSONFiles(); err != nil {
@@ -77,7 +88,21 @@ func NewServer() (*Server, error) {
 
 func (s *Server) GetScooterData(w http.ResponseWriter, r *http.Request, params api.GetScooterDataParams) {
 	if strings.HasPrefix(params.Id, "load-") {
-		params.Id = "scooter-1"
+		// Deterministic variety for load-tests: spread across existing scooters/zones and charges.
+		base := pickByHash([]string{"scooter-1", "scooter-2", "scooter-3", "scooter-4"}, params.Id)
+		scooter, ok := s.storage.GetScooter(base)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		out := *scooter
+		out.Id = params.Id
+		// Spread charge to trigger low-charge discount sometimes (threshold ~28%).
+		out.Charge = int(hash32(params.Id)%91) + 10 // 10..100
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(out)
+		return
 	}
 	scooter, ok := s.storage.GetScooter(params.Id)
 	if !ok {
@@ -91,7 +116,8 @@ func (s *Server) GetScooterData(w http.ResponseWriter, r *http.Request, params a
 
 func (s *Server) GetTariffZoneData(w http.ResponseWriter, r *http.Request, params api.GetTariffZoneDataParams) {
 	if strings.HasPrefix(params.Id, "load-") {
-		params.Id = "zone-1"
+		// Keep compatibility for any load-zone IDs.
+		params.Id = pickByHash([]string{"zone-1", "zone-2"}, params.Id)
 	}
 	zone, ok := s.storage.GetZone(params.Id)
 	if !ok {
@@ -105,7 +131,22 @@ func (s *Server) GetTariffZoneData(w http.ResponseWriter, r *http.Request, param
 
 func (s *Server) GetUserProfile(w http.ResponseWriter, r *http.Request, params api.GetUserProfileParams) {
 	if strings.HasPrefix(params.Id, "load-") {
-		params.Id = "user-1"
+		// Deterministic variety: map to existing users but also flip flags for more pricing variety.
+		base := pickByHash([]string{"user-1", "user-2", "user-3", "user-4"}, params.Id)
+		user, ok := s.storage.GetUser(base)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		out := *user
+		out.Id = params.Id
+		h := hash32(params.Id)
+		out.HasSubscription = (h&1 == 0)
+		out.Trusted = (h&2 == 0)
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(out)
+		return
 	}
 	user, ok := s.storage.GetUser(params.Id)
 	if !ok {
@@ -119,6 +160,16 @@ func (s *Server) GetUserProfile(w http.ResponseWriter, r *http.Request, params a
 
 func (s *Server) GetConfigs(w http.ResponseWriter, r *http.Request) {
 	configs := s.storage.GetConfigs()
+	// Add variety over time (minute buckets) so offers created in different minutes get different prices.
+	// This is deterministic and doesn't require storing state.
+	minute := time.Now().Unix() / 60
+	// Surge cycles 1.0 .. 1.6
+	configs["surge"] = 1.0 + float64(minute%7)*0.1
+	// Low charge discount cycles 0.5 .. 0.9
+	configs["low_charge_discount"] = 0.5 + float64(minute%5)*0.1
+	// Threshold cycles 20, 30, 40
+	configs["low_charge_threshold_percent"] = 20 + int(minute%3)*10
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(configs)
 }
