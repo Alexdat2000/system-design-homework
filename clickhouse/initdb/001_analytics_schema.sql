@@ -1,8 +1,5 @@
--- Initialize ClickHouse OLAP database and base tables.
-
 CREATE DATABASE IF NOT EXISTS analytics;
 
--- DDS: orders (supports updates via updated_at).
 CREATE TABLE IF NOT EXISTS analytics.dds_orders (
     id String,
     user_id String,
@@ -23,7 +20,6 @@ ENGINE = ReplacingMergeTree(updated_at)
 PARTITION BY toYYYYMM(updated_at)
 ORDER BY (id);
 
--- DDS: minute-level RPS aggregates for orders endpoints.
 CREATE TABLE IF NOT EXISTS analytics.dds_orders_rps_minute (
     minute_ts DateTime,
     get_orders_count UInt64,

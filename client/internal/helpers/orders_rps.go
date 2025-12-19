@@ -13,11 +13,6 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// OrdersRPSCollector tracks request counts for /orders endpoints.
-//
-// We intentionally count by route pattern (chi) so the metric is stable:
-// - POST /orders
-// - GET /orders/{order_id} (reported as "GET /orders" in aggregated dashboards)
 type OrdersRPSCollector struct {
 	getOrders  atomic.Uint64
 	postOrders atomic.Uint64
@@ -31,12 +26,10 @@ func (c *OrdersRPSCollector) Middleware(next http.Handler) http.Handler {
 
 		switch r.Method {
 		case http.MethodPost:
-			// Count only create order.
 			if routePattern == "/orders" {
 				c.postOrders.Add(1)
 			}
 		case http.MethodGet:
-			// Count getting an order as GET /orders (since OpenAPI is /orders/{order_id}).
 			if routePattern == "/orders/{order_id}" || routePattern == "/orders" {
 				c.getOrders.Add(1)
 			}
@@ -62,16 +55,12 @@ CREATE TABLE IF NOT EXISTS orders_rps_minute (
 		return fmt.Errorf("ensure orders_rps_minute table: %w", err)
 	}
 
-	// If the table existed before we added updated_at, add it (idempotent).
 	_, _ = db.Pool.Exec(ctx, `ALTER TABLE orders_rps_minute ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`)
 
 	return nil
 }
 
-// StartOrdersRPSWriter flushes counters to Postgres once per minute.
-// It aligns flushes to the minute boundary and writes counts for the *previous* minute.
 func StartOrdersRPSWriter(ctx context.Context, db *postgres.DB, c *OrdersRPSCollector) {
-	// Align to the next minute boundary.
 	next := time.Now().UTC().Truncate(time.Minute).Add(time.Minute)
 	timer := time.NewTimer(time.Until(next))
 	defer timer.Stop()
@@ -81,7 +70,6 @@ func StartOrdersRPSWriter(ctx context.Context, db *postgres.DB, c *OrdersRPSColl
 		case <-ctx.Done():
 			return
 		case t := <-timer.C:
-			// We flushed at the boundary; attribute counts to the previous minute window.
 			minuteTS := t.UTC().Truncate(time.Minute).Add(-time.Minute)
 			getCnt, postCnt := c.snapshotAndReset()
 
@@ -100,11 +88,9 @@ func StartOrdersRPSWriter(ctx context.Context, db *postgres.DB, c *OrdersRPSColl
 			)
 			cancel()
 			if err != nil {
-				// Best-effort metric. We log and continue.
 				log.Printf("orders_rps_minute flush failed: %v", err)
 			}
 
-			// Schedule next tick precisely.
 			next = t.UTC().Truncate(time.Minute).Add(time.Minute)
 			timer.Reset(time.Until(next))
 		}

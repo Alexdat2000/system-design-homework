@@ -1,7 +1,3 @@
--- Full refresh mart: minute-level order metrics.
--- Note: ClickHouse HTTP disallows multi-statements in a single request in many setups,
--- so Airflow executes statements sequentially after splitting by statement delimiter.
-
 DROP TABLE IF EXISTS analytics.mart_orders_minute;
 
 CREATE TABLE analytics.mart_orders_minute (
@@ -20,8 +16,6 @@ CREATE TABLE analytics.mart_orders_minute (
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(minute_ts)
 ORDER BY (minute_ts);
-
-TRUNCATE TABLE analytics.mart_orders_minute;
 
 INSERT INTO analytics.mart_orders_minute
 WITH latest AS (
@@ -51,8 +45,3 @@ SELECT
 FROM latest
 GROUP BY minute_ts
 ORDER BY minute_ts ASC;
-
--- Drop legacy daily mart (kept only for backward compatibility with older runs).
-DROP TABLE IF EXISTS analytics.mart_orders_daily;
-
-

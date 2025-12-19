@@ -23,17 +23,15 @@ with DAG(
     dag_id="full_pipeline_manual",
     default_args=default_args,
     description="Manual-only pipeline: Postgres -> ClickHouse DDS -> ClickHouse MARTs",
-    schedule=None,  # manual only
+    schedule=None,
     catchup=False,
     is_paused_upon_creation=False,
 ) as dag:
-    # DDS loads (can run in parallel)
     t_orders = PythonOperator(task_id="load_orders_dds", python_callable=load_orders_dds)
     t_rps = PythonOperator(
         task_id="load_orders_rps_minute_dds", python_callable=load_orders_rps_minute_dds
     )
 
-    # MART builds (run in parallel after all DDS loads finish)
     t_mart_rps = PythonOperator(
         task_id="build_mart_rps_minute",
         python_callable=build_mart,

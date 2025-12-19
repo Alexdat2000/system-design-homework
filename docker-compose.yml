@@ -41,8 +41,6 @@ services:
     image: redis:7-alpine
     container_name: scooter-redis
     command: ["redis-server", "--appendonly", "yes"]
-    # Port mapping is optional; internal containers use service name `redis:6379`.
-    # Host port 6379 is often already occupied by a local Redis on developer machines.
     ports:
       - "${REDIS_HOST_PORT:-6380}:6379"
     healthcheck:

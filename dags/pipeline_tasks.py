@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 def ch_client():
-    import clickhouse_connect  # installed in custom Airflow image
+    import clickhouse_connect
 
     host = os.getenv("CLICKHOUSE_HOST", "clickhouse")
     port = int(os.getenv("CLICKHOUSE_HTTP_PORT", "8123"))
@@ -24,14 +24,10 @@ def ch_client():
 
 
 def _truncate(ch, table: str) -> None:
-    # Full refresh behavior: always rebuild DDS tables from scratch.
     ch.command(f"TRUNCATE TABLE IF EXISTS {table}")
 
 
 def load_orders_dds(batch_size: int = 5000) -> None:
-    """
-    Full refresh: load ALL orders from Postgres into ClickHouse DDS.
-    """
     ch = ch_client()
     pg = PostgresHook(postgres_conn_id="postgres_default")
 
@@ -88,9 +84,6 @@ def load_orders_dds(batch_size: int = 5000) -> None:
     logger.info("orders loaded rows: %d", total)
 
 def load_orders_rps_minute_dds(batch_size: int = 5000) -> None:
-    """
-    Full refresh: load ALL orders_rps_minute from Postgres into ClickHouse DDS.
-    """
     ch = ch_client()
     pg = PostgresHook(postgres_conn_id="postgres_default")
 
@@ -133,9 +126,6 @@ def load_orders_rps_minute_dds(batch_size: int = 5000) -> None:
 
 
 def _split_sql(sql: str) -> List[str]:
-    # Naive ';' splitting breaks when SQL files contain semicolons in comments.
-    # ClickHouse treats comment-only input as an empty query and errors.
-    # For our use-case, it's sufficient to drop full-line comments and then split.
     filtered_lines: List[str] = []
     for line in sql.splitlines():
         stripped = line.strip()
@@ -157,21 +147,7 @@ def run_sql_file_in_clickhouse(path: Path) -> None:
         ch.command(stmt)
 
 
-def build_marts() -> None:
-    # Airflow container has repo SQL mounted at /opt/airflow/sql
-    base = Path("/opt/airflow/sql/marts")
-    for name in [
-        "mart_rps_minute.sql",
-        "mart_orders_minute.sql",
-    ]:
-        run_sql_file_in_clickhouse(base / name)
-
-
 def build_mart(sql_filename: str) -> None:
-    """
-    Build a single mart by executing its SQL file.
-    Intended for separate Airflow tasks (so the UI shows multiple cubes).
-    """
     base = Path("/opt/airflow/sql/marts")
     run_sql_file_in_clickhouse(base / sql_filename)
 

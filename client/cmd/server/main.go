@@ -53,7 +53,6 @@ func main() {
 	defer db.Close()
 	log.Println("Connected to PostgreSQL database")
 
-	// Ensure new OLTP table exists even if Postgres volume was created before the migration was added.
 	{
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		if err := helpers.EnsureOrdersRPSMinuteTable(ctx, db); err != nil {
@@ -120,7 +119,6 @@ func main() {
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
 
-	// Background writer: flush counts to Postgres once per minute.
 	go helpers.StartOrdersRPSWriter(context.Background(), db, ordersRPS)
 
 	srv := &http.Server{

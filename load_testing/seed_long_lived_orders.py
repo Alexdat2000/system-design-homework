@@ -1,19 +1,4 @@
 #!/usr/bin/env python3
-"""
-Seed script to generate OLTP data for dashboards:
-
-- Many concurrent long-lived orders (ACTIVE for a while)
-- Exactly N GET /orders/{id} per order during the ride
-- Random ride durations and different scooters (zone-1 vs zone-2) -> different pricing
-- Enough traffic over multiple minutes to populate orders_rps_minute
-
-It uses the same public HTTP API as integration_tests.
-
-Usage example:
-  python3 load_testing/seed_long_lived_orders.py \
-    --orders 200 --concurrency 50 --min-duration 90 --max-duration 420 --gets-per-order 5 --finish-ratio 0.9
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -106,11 +91,8 @@ def run_long_lived_order(
     finish_ratio: float,
     get_jitter_s: float,
 ) -> ScenarioResult:
-    # Using load-* user IDs so external-service maps them to existing users,
-    # but keeping scooter_id real (scooter-1..4) so we get zone-based pricing diversity.
     user_id = f"load-user-{idx}-{uuid.uuid4()}"
     if scooter_id_mode == "load":
-        # external-service will map load-* scooter IDs to real scooters/zones deterministically
         scooter_id = f"load-scooter-{idx}-{uuid.uuid4()}"
     else:
         scooter_id = random.choice(scooters)
@@ -145,8 +127,6 @@ def run_long_lived_order(
                 error=f"create_order failed: {order_resp.status_code} {order_resp.text}",
             )
 
-        # Spread GETs across the ride duration, so we get realistic distribution and RPS per minute.
-        # Example: 5 GETs -> 6 segments. GET in each segment boundary (except at t=0).
         segment = max(1.0, duration_s / float(gets_per_order + 1))
         for _ in range(gets_per_order):
             _sleep_jitter(segment, get_jitter_s)
@@ -162,7 +142,6 @@ def run_long_lived_order(
                     error=f"get_order failed: {get_resp.status_code} {get_resp.text}",
                 )
 
-        # Finish (or keep ACTIVE).
         remaining = max(0.0, duration_s - (segment * gets_per_order))
         _sleep_jitter(remaining, get_jitter_s)
 
@@ -198,7 +177,6 @@ def run_long_lived_order(
                 final_amount=final_amount,
             )
 
-        # Not finishing: still return a summary based on GET.
         last_get = client.get_order(order_id)
         if last_get.status_code == 200:
             data = last_get.json()
@@ -306,9 +284,6 @@ def main() -> None:
     started = time.time()
     results: list[ScenarioResult] = []
 
-    # Pre-compute planned start offsets to spread creation timestamps across time.
-    # We schedule submissions at these offsets (instead of sleeping inside worker threads),
-    # so the wave/shape is preserved even when concurrency < orders.
     planned_offsets: list[float] = []
     if args.start_window <= 0:
         planned_offsets = [0.0 for _ in range(args.orders)]
@@ -340,7 +315,6 @@ def main() -> None:
                 off = peak + random.gauss(0.0, args.wave_width)
             else:
                 off = random.uniform(0.0, float(args.start_window))
-            # clamp into window
             off = max(0.0, min(float(args.start_window), off))
             planned_offsets.append(off)
     else:
@@ -377,7 +351,6 @@ def main() -> None:
             if target_ts > now:
                 time.sleep(target_ts - now)
 
-            # Keep at most concurrency tasks actively running.
             while len(futures) >= args.concurrency:
                 done, futures = wait(futures, return_when=FIRST_COMPLETED)
                 for f in done:
@@ -403,7 +376,6 @@ def main() -> None:
                 )
             )
 
-        # Collect remaining.
         if futures:
             done, _ = wait(futures)
             for f in done:
@@ -421,7 +393,6 @@ def main() -> None:
     finished = [r for r in ok if r.finished]
     active = [r for r in ok if not r.finished]
 
-    # Some quick stats to verify dashboards won't be empty / constant.
     amounts = [r.final_amount for r in finished if isinstance(r.final_amount, int)]
     amounts_sorted = sorted(amounts)
     def _p(pct: float) -> Optional[int]:
@@ -451,9 +422,7 @@ def main() -> None:
         logging.info("No finished amounts collected (maybe finish_ratio=0?)")
 
     logging.info(
-        "Next: run Airflow DAGs to load into ClickHouse + rebuild marts:\n"
-        "  - etl_pg_to_ch_dds\n"
-        "  - ch_transform_marts"
+        "Next: run Airflow DAG full_pipeline_manual to load into ClickHouse + rebuild marts"
     )
 
 

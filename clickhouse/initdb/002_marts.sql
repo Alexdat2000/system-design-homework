@@ -1,5 +1,3 @@
--- MART tables for dashboarding (materialized via Airflow SQL tasks).
-
 CREATE TABLE IF NOT EXISTS analytics.mart_rps_minute (
     minute_ts DateTime,
     get_rps Float64,
