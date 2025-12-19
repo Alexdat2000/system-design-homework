@@ -19,7 +19,10 @@ CREATE TABLE IF NOT EXISTS analytics.mart_orders_minute (
     orders_cancelled UInt64,
     orders_payment_failed UInt64,
     revenue_total Int64,
-    avg_duration_seconds_finished Float64
+    avg_duration_seconds_finished Float64,
+    avg_total_amount_finished Float64,
+    avg_price_unlock_finished Float64,
+    avg_price_per_minute_finished Float64
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(minute_ts)
