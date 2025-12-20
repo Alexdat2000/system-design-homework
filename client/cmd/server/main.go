@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -52,6 +53,15 @@ func main() {
 	defer db.Close()
 	log.Println("Connected to PostgreSQL database")
 
+	{
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := helpers.EnsureOrdersRPSMinuteTable(ctx, db); err != nil {
+			cancel()
+			log.Fatalf("Failed to ensure orders_rps_minute table: %v", err)
+		}
+		cancel()
+	}
+
 	redisClient, err := redis.NewClient(cfg.RedisURL)
 	if err != nil {
 		log.Fatalf("Failed to connect to Redis: %v", err)
@@ -91,12 +101,15 @@ func main() {
 		offersHandler: offersHandler,
 	}
 
+	ordersRPS := &helpers.OrdersRPSCollector{}
+
 	router := chi.NewRouter()
 	router.Use(
 		middleware.RequestID,
 		middleware.RealIP,
 		middleware.Recoverer,
 		helpers.RequestLoggerWithBody,
+		ordersRPS.Middleware,
 	)
 
 	router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -105,6 +118,8 @@ func main() {
 	})
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
+
+	go helpers.StartOrdersRPSWriter(context.Background(), db, ordersRPS)
 
 	srv := &http.Server{
 		Addr:           addr,

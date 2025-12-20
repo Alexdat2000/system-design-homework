@@ -1,0 +1,16 @@
+<clickhouse>
+  <users>
+    <!-- Dedicated user for Airflow / DataLens access from docker network -->
+    <airflow>
+      <password>airflow</password>
+      <networks>
+        <ip>0.0.0.0/0</ip>
+        <ip>::/0</ip>
+      </networks>
+      <profile>default</profile>
+      <quota>default</quota>
+    </airflow>
+  </users>
+</clickhouse>
+
+

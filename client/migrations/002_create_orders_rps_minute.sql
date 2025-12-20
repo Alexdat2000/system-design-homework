@@ -1,0 +1,9 @@
+CREATE TABLE IF NOT EXISTS orders_rps_minute (
+    minute_ts TIMESTAMP PRIMARY KEY,
+    get_orders_count INTEGER NOT NULL DEFAULT 0,
+    post_orders_count INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+
