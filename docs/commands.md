@@ -21,3 +21,7 @@ docker compose down && docker compose build && docker compose up -d
 ```bash
 docker compose down -v --remove-orphans
 ```
+
+```bash
+http://51.250.101.214:8088/login/?next=http%3A%2F%2F51.250.101.214%3A8088%2Fhome
+```
